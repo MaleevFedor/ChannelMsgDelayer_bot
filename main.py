@@ -11,9 +11,10 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=config.TOKEN)
 dp = Dispatcher(bot)
 
-@dp.message_handler()
+
+
+@dp.message_handler(content_types=[types.ContentType.ANY])
 async def echo(message: types.Message):
-    #await bot.send_message()
     await message.answer(message['forward_from_chat']['id'])
 
 if __name__ == '__main__':

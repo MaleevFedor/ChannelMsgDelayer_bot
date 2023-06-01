@@ -15,7 +15,13 @@ dp = Dispatcher(bot)
 
 @dp.message_handler(content_types=[types.ContentType.ANY])
 async def echo(message: types.Message):
-    await message.answer(message['forward_from_chat']['id'])
+
+    if message.text is not None:
+        await bot.send_message(-1001945938118, message.text)
+    elif message.photo is not None:
+        await bot.send_photo(chat_id=-1001945938118, photo=message.photo[-1].file_id,
+                             caption=message.caption)
+    #await message.answer(message['forward_from_chat']['id'])
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=False)

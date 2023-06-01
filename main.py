@@ -7,15 +7,11 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 logging.basicConfig(level=logging.INFO)
-
+storage = MemoryStorage()
 bot = Bot(token=config.TOKEN)
-dp = Dispatcher(bot, storage=MemoryStorage())
+dp = Dispatcher(bot, storage=storage)
 
 db_session.global_init("data.db3")
-
-class ForwardingMessages(StatesGroup):
-    WaitingForMessage = State()
-
 
 @dp.message_handler(commands='start')
 async def start(message: types.Message):
@@ -30,7 +26,7 @@ async def start(message: types.Message):
         await message.answer(f"Добро пожаловать, {message['from']['first_name']}")
 
 
-@dp.message_handler(content_types=[types.ContentType.ANY])
+#@dp.message_handler(content_types=[types.ContentType.ANY])
 #async def echo(message: types.Message):
 #
 #    await bot.send_photo(chat_id=-1001945938118, photo=message.photo[-1].file_id,
@@ -38,12 +34,17 @@ async def start(message: types.Message):
 #    for i in message:
 #        await message.answer(i)
 
+class ForwardingMessages(StatesGroup):
+    WaitingForMessage = State()
+
+
+@dp.message_handler(commands=['forward'])
 async def start_forwarding(message: types.Message, state: FSMContext):
     await message.answer('Скиньте сообщение для пересылки')
     await state.set_state(ForwardingMessages.WaitingForMessage.state)
 
 
-
+@dp.message_handler(state=ForwardingMessages.WaitingForMessage,content_types=[types.ContentType.ANY])
 async def forward(message: types.Message, state: FSMContext):
     if message.text is not None:
         await bot.send_message(-1001945938118, message.text)
@@ -53,9 +54,8 @@ async def forward(message: types.Message, state: FSMContext):
     await state.finish()
 
 
-def register_handlers_forwarding(dp: Dispatcher):
-    dp.register_message_handler('start_forwarding', commands="forward", state="*")
-    dp.register_message_handler('forward', state=ForwardingMessages.WaitingForMessage)
+
+
 
 
 if __name__ == '__main__':

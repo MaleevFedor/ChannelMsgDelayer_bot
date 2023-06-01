@@ -5,22 +5,17 @@ from data.user_class import User
 import config
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=config.TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher(bot, storage=MemoryStorage())
 
 db_session.global_init("data.db3")
 
 class ForwardingMessages(StatesGroup):
     WaitingForMessage = State()
 
-
-
-def register_handlers_forwarding(dp: Dispatcher):
-    dp.register_message_handler('start_forwarding', commands="forward", state="*")
-    dp.register_message_handler('forward', state=ForwardingMessages.WaitingForMessage)
 
 @dp.message_handler(commands='start')
 async def start(message: types.Message):
@@ -49,12 +44,19 @@ async def start_forwarding(message: types.Message, state: FSMContext):
 
 
 
-async def forward(message: types.Message):
+async def forward(message: types.Message, state: FSMContext):
     if message.text is not None:
         await bot.send_message(-1001945938118, message.text)
     elif message.photo is not None:
         await bot.send_photo(chat_id=-1001945938118, photo=message.photo[-1].file_id,
                              caption=message.caption)
+    await state.finish()
+
+
+def register_handlers_forwarding(dp: Dispatcher):
+    dp.register_message_handler('start_forwarding', commands="forward", state="*")
+    dp.register_message_handler('forward', state=ForwardingMessages.WaitingForMessage)
+
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=False)

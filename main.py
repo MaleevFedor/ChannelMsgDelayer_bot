@@ -19,9 +19,8 @@ class ForwardingMessages(StatesGroup):
 
 
 def register_handlers_forwarding(dp: Dispatcher):
-    dp.register_message_handler('', commands="food", state="*")
-    dp.register_message_handler('', state=''.waiting_for_food_name)
-    dp.register_message_handler('', state=''.waiting_for_food_size)
+    dp.register_message_handler('start_forwarding', commands="forward", state="*")
+    dp.register_message_handler('forward', state=ForwardingMessages.WaitingForMessage)
 
 @dp.message_handler(commands='start')
 async def start(message: types.Message):

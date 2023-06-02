@@ -43,7 +43,7 @@ async def add_channel(message: types.Message, state: FSMContext):
 async def get_message_from_channel(message: types.Message, state: FSMContext):
     db_sess = db_session.create_session()
     channel_id = message['forward_from_chat']['id']
-    cur_user_id = int(message['from']['id'])
+    cur_user_id = db_sess.query(User).filter(User.tg_id == int(message['from']['id'])).first().id
     if db_sess.query(Channel).filter(Channel.tg_id == channel_id,
                                      Channel.user_id == cur_user_id).first():
         await message.reply("Вы уже добавили этот канал, попробуйте ещё раз")
@@ -58,10 +58,10 @@ async def get_message_from_channel(message: types.Message, state: FSMContext):
         await AddChannels.next()
         db_sess.close()
 
+
 # adding a new channel
 @dp.message_handler(state=AddChannels.WaitingForAdministration.state, commands='check')
 async def get_message_from_channel(message: types.Message, state: FSMContext):
-    result = False
     async with state.proxy() as data:
         try:
             for i in await bot.get_chat_administrators(data['tg_id']):
@@ -70,7 +70,6 @@ async def get_message_from_channel(message: types.Message, state: FSMContext):
             else:
                 await message.answer('Вы ещё не сделали бота администратором, пожалуйста повторите попытку')
             await message.answer('Успех')
-            print(data['user_id'], data['tg_id'])
             db_sess = db_session.create_session()
             user = Channel(user_id=data['user_id'], tg_id=data['tg_id'])
             db_sess.add(user)
@@ -79,7 +78,7 @@ async def get_message_from_channel(message: types.Message, state: FSMContext):
         except Exception as e:
             if str(e) == "Member list is inaccessible":
                 await message.answer('Вы ещё не сделали бота администратором или указали неверный канал,пожалуйста '
-                                     'начните занаво')
+                                     f'начните заново, ошибка: "{e}"')
                 await state.finish()
 
 

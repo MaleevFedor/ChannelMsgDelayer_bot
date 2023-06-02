@@ -61,7 +61,7 @@ async def get_message_from_channel(message: types.Message, state: FSMContext):
 
 # adding a new channel
 @dp.message_handler(state=AddChannels.WaitingForAdministration.state, commands='check')
-async def get_message_from_channel(message: types.Message, state: FSMContext):
+async def administration_check(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         try:
             for i in await bot.get_chat_administrators(data['tg_id']):
@@ -80,6 +80,16 @@ async def get_message_from_channel(message: types.Message, state: FSMContext):
                 await message.answer('Вы ещё не сделали бота администратором или указали неверный канал,пожалуйста '
                                      f'начните заново, ошибка: "{e}"')
                 await state.finish()
+
+
+# list of channels
+@dp.message_handler(commands=['channels_list', 'list_of_channels'])
+async def get_list_of_channels(message: types.Message):
+    db_sess = db_session.create_session()
+    user_id = int(message['from']['id'])
+    db_id = db_sess.query(User).filter(User.tg_id == user_id).first().id
+    for i in db_sess.query(Channel).filter(Channel.user_id == db_id).all():
+        print(i.tg_id)
 
 
 @dp.message_handler(state=AddChannels.WaitingForAdministration)

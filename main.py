@@ -8,7 +8,6 @@ from aiogram.dispatcher import FSMContext
 from fsm import ForwardingMessages, AddChannels
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
-
 logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
 bot = Bot(token=config.TOKEN)

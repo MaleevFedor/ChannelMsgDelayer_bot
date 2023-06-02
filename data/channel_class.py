@@ -7,3 +7,4 @@ class Channel(SqlAlchemyBase):
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
     user_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
     tg_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    ch_username = sqlalchemy.Column(sqlalchemy.String)

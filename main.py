@@ -52,6 +52,7 @@ async def get_message_from_channel(message: types.Message, state: FSMContext):
         async with state.proxy() as data:
             data['user_id'] = cur_user_id
             data['tg_id'] = channel_id
+            data['username'] = message['forward_from_chat']['username']
         await message.answer(f'''Вы добавили канал: @{message['forward_from_chat']['username']}. Для завершения сделайте 
 <code>@ChannelMsgDelayer_bot</code> администратором вашего канала
 Напишите /check когда сделаете бота администратором''', parse_mode='HTML')
@@ -71,7 +72,7 @@ async def administration_check(message: types.Message, state: FSMContext):
                 await message.answer('Вы ещё не сделали бота администратором, пожалуйста повторите попытку')
             await message.answer('Успех')
             db_sess = db_session.create_session()
-            user = Channel(user_id=data['user_id'], tg_id=data['tg_id'])
+            user = Channel(user_id=data['user_id'], tg_id=data['tg_id'], ch_username=data['username'])
             db_sess.add(user)
             db_sess.commit()
             await state.finish()
@@ -88,8 +89,16 @@ async def get_list_of_channels(message: types.Message):
     db_sess = db_session.create_session()
     user_id = int(message['from']['id'])
     db_id = db_sess.query(User).filter(User.tg_id == user_id).first().id
-    for i in db_sess.query(Channel).filter(Channel.user_id == db_id).all():
-        print(i.tg_id)
+    list_of_channels = db_sess.query(Channel).filter(Channel.user_id == db_id).all()
+    if len(list_of_channels) == 0:
+        await message.answer('Вы ещё не добавили ни один канал')
+    else:
+        result = 'Ваши добавленные каналы:'
+        for i in list_of_channels:
+            username = i.ch_username
+            if username:
+                result += f'\n@{username}'
+        await message.answer(result)
 
 
 @dp.message_handler(state=AddChannels.WaitingForAdministration)

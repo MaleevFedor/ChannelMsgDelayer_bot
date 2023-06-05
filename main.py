@@ -8,6 +8,7 @@ from aiogram.dispatcher import FSMContext
 from fsm import ForwardingMessages, AddChannels
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
+
 logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
 bot = Bot(token=config.TOKEN)
@@ -24,7 +25,7 @@ async def start(message: types.Message):
     if db_sess.query(User).filter((User.tg_id == id)).first():
         await message.answer("Вы уже зарегистрированы")
     else:
-        user = User(tg_id=id)
+        user = User(tg_id=id, username=message['from']['username'])
         db_sess.add(user)
         db_sess.commit()
         db_sess.close()
@@ -42,10 +43,6 @@ async def add_channel(message: types.Message, state: FSMContext):
 # adding a new channel
 @dp.message_handler(state=AddChannels.WaitingForMessage.state, content_types=[types.ContentType.ANY])
 async def get_message_from_channel(message: types.Message, state: FSMContext):
-    if message.text == '/cancel':
-        await state.finish()
-        await message.reply('👌')
-        return
     db_sess = db_session.create_session()
     channel_id = message['forward_from_chat']['id']
     cur_user_id = db_sess.query(User).filter(User.tg_id == int(message['from']['id'])).first().id
@@ -69,12 +66,9 @@ async def get_message_from_channel(message: types.Message, state: FSMContext):
 # adding a new channel
 @dp.message_handler(state=AddChannels.WaitingForAdministration.state, commands='check')
 async def administration_check(message: types.Message, state: FSMContext):
-    if message.text == '/cancel':
-        await state.finish()
-        await message.reply('👌')
-        return
     async with state.proxy() as data:
         try:
+            print(await bot.get_chat_member(data['tg_id'], int(config.TOKEN.split(':')[0])))
             for i in await bot.get_chat_administrators(data['tg_id']):
                 if i["user"]['id'] == int(config.TOKEN.split(':')[0]):
                     break
@@ -121,10 +115,6 @@ async def start_forwarding(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=ForwardingMessages.WaitingForMessage, content_types=types.ContentType.ANY)
 async def forward(message: types.Message, state: FSMContext):
-    if message.text == '/cancel':
-        await state.finish()
-        await message.reply('👌')
-        return
     if message.text is not None:
         await bot.send_message(-1001945938118, message.text)
     elif message.photo is not None:
@@ -135,3 +125,4 @@ async def forward(message: types.Message, state: FSMContext):
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=False)
+

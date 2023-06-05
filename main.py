@@ -27,19 +27,25 @@ async def start(message: types.Message):
         user = User(tg_id=id)
         db_sess.add(user)
         db_sess.commit()
+        db_sess.close()
         await message.answer(f"Добро пожаловать, {message['from']['first_name']}")
 
 
 # adding a new channel
 @dp.message_handler(commands='add_channel')
 async def add_channel(message: types.Message, state: FSMContext):
-    await message.answer('Пожалуйста перешлите сообщение из вашего канала')
+    await message.answer('''Пожалуйста перешлите сообщение из вашего канала
+или напишите /cancel для отмены''')
     await state.set_state(AddChannels.WaitingForMessage.state)
 
 
 # adding a new channel
 @dp.message_handler(state=AddChannels.WaitingForMessage.state, content_types=[types.ContentType.ANY])
 async def get_message_from_channel(message: types.Message, state: FSMContext):
+    if message.text == '/cancel':
+        await state.finish()
+        await message.reply('👌')
+        return
     db_sess = db_session.create_session()
     channel_id = message['forward_from_chat']['id']
     cur_user_id = db_sess.query(User).filter(User.tg_id == int(message['from']['id'])).first().id
@@ -54,7 +60,8 @@ async def get_message_from_channel(message: types.Message, state: FSMContext):
             data['username'] = message['forward_from_chat']['username']
         await message.answer(f'''Вы добавили канал: @{message['forward_from_chat']['username']}. Для завершения сделайте 
 <code>@ChannelMsgDelayer_bot</code> администратором вашего канала
-Напишите /check когда сделаете бота администратором''', parse_mode='HTML')
+Напишите /check когда сделаете бота администратором
+или /cancel для отмены''', parse_mode='HTML')
         await AddChannels.next()
         db_sess.close()
 
@@ -62,6 +69,10 @@ async def get_message_from_channel(message: types.Message, state: FSMContext):
 # adding a new channel
 @dp.message_handler(state=AddChannels.WaitingForAdministration.state, commands='check')
 async def administration_check(message: types.Message, state: FSMContext):
+    if message.text == '/cancel':
+        await state.finish()
+        await message.reply('👌')
+        return
     async with state.proxy() as data:
         try:
             for i in await bot.get_chat_administrators(data['tg_id']):
@@ -74,6 +85,7 @@ async def administration_check(message: types.Message, state: FSMContext):
             user = Channel(user_id=data['user_id'], tg_id=data['tg_id'], ch_username=data['username'])
             db_sess.add(user)
             db_sess.commit()
+            db_sess.close()
             await state.finish()
         except Exception as e:
             if str(e) == "Member list is inaccessible":
@@ -89,6 +101,7 @@ async def get_list_of_channels(message: types.Message):
     user_id = int(message['from']['id'])
     db_id = db_sess.query(User).filter(User.tg_id == user_id).first().id
     list_of_channels = db_sess.query(Channel).filter(Channel.user_id == db_id).all()
+    db_sess.close()
     if len(list_of_channels) == 0:
         await message.answer('Вы ещё не добавили ни один канал')
     else:
@@ -100,16 +113,6 @@ async def get_list_of_channels(message: types.Message):
         await message.answer(result)
 
 
-@dp.message_handler(state=AddChannels.WaitingForAdministration)
-async def forward(message: types.Message, state: FSMContext):
-    if message.text is not None:
-        await bot.send_message(-1001945938118, message.text)
-    elif message.photo is not None:
-        await bot.send_photo(chat_id=-1001945938118, photo=message.photo[-1].file_id,
-                             caption=message.caption)
-    await state.finish()
-
-
 @dp.message_handler(commands='forward')
 async def start_forwarding(message: types.Message, state: FSMContext):
     await message.answer('Скиньте сообщение для пересылки')
@@ -118,6 +121,10 @@ async def start_forwarding(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=ForwardingMessages.WaitingForMessage, content_types=types.ContentType.ANY)
 async def forward(message: types.Message, state: FSMContext):
+    if message.text == '/cancel':
+        await state.finish()
+        await message.reply('👌')
+        return
     if message.text is not None:
         await bot.send_message(-1001945938118, message.text)
     elif message.photo is not None:

@@ -1,29 +1,23 @@
 import logging
-import sqlite3
-import datetime
 from aiogram import Bot, Dispatcher, executor, types
 from data import db_session
 from data.user_class import User
-from data.message_class import Message
 from data.channel_class import Channel
 import config
 from aiogram.dispatcher import FSMContext
 from fsm import ForwardingMessages, AddChannels
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
+import Delayer
 import aioschedule
 
 logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
 bot = Bot(token=config.TOKEN)
 dp = Dispatcher(bot, storage=storage)
-
 db_session.global_init("data.db3")
 
 
-
-
-
-def create_list_of_channels(user_id):
+async def create_list_of_channels(user_id):
     db_sess = db_session.create_session()
     db_id = db_sess.query(User).filter(User.tg_id == user_id).first().id
     list_of_channels = db_sess.query(Channel).filter(Channel.user_id == db_id).all()
@@ -108,15 +102,13 @@ async def administration_check(message: types.Message, state: FSMContext):
 # list of channels
 @dp.message_handler(commands=['channels_list', 'list_of_channels'])
 async def get_list_of_channels(message: types.Message):
-    list_of_channels = create_list_of_channels(int(message['from']['id']))
+    list_of_channels = await create_list_of_channels(int(message['from']['id']))
     if len(list_of_channels) == 0:
         await message.answer('Вы ещё не добавили ни один канал')
     else:
         result = 'Ваши добавленные каналы:'
         for i in list_of_channels:
-            username = i.ch_username
-            if username:
-                result += f'\n@{username}'
+            if i: result += i
         await message.answer(result)
 
 
@@ -128,49 +120,17 @@ async def start_forwarding(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=ForwardingMessages.WaitingForMessage, content_types=types.ContentType.ANY)
 async def forward(message: types.Message, state: FSMContext):
-    # try:
-    #     await message.send_copy(chat_id=-1001945938118)
-    # except TypeError:
-    #     await message.reply(text='Данный тип апдейтов не поддерживается '
-    #                              'методом send_copy')
-    msg_id = message.message_id
-    async with state.proxy() as data:
-        data['message_id'] = msg_id
-    await ForwardingMessages.next()
-
-    await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm:ss")
-
-
-@dp.message_handler(state=ForwardingMessages.WaitingForTimeToSchedule, content_types=types.ContentType.TEXT)
-async def forward_time(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        data['pubdate'] = message.text
-    await message.answer('Напишите айди канала, в который нужно прислать сообщение')
-    await ForwardingMessages.next()
-
-#TODO buttons instead of typing channel's ID
-@dp.message_handler(state=ForwardingMessages.WaitingForChannelsToBeChosen, content_types=types.ContentType.TEXT)
-async def forward_channel(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        data['channel_id'] = message.text
-        await message.answer(data)
-        await message.answer(message.from_user.id)
-        dt = datetime.datetime.strptime(data['pubdate'], '%Y-%m-%d-%H:%M:%S')
-        await message.answer(dt)
-        db_sess = db_session.create_session()
-        Msg = Message(tg_id=data['message_id'], sender_id=message.from_user.id, channel_id=data['channel_id'],date=dt)
-        db_sess.add(Msg)
-        db_sess.commit()
-        db_sess.close()
+    if message.text is not None:
+        await bot.send_message(-1001945938118, message.text)
+    elif message.photo is not None:
+        await bot.send_photo(chat_id=-1001945938118, photo=message.photo[-1].file_id,
+                             caption=message.caption)
     await state.finish()
-    await message.answer('i sex uyr mom')
 
-
-
-
-async def post_message():
-    pass
 
 if __name__ == '__main__':
+    # Delayer.set_today_schedule(db_session.create_session(), post_message)
     executor.start_polling(dp, skip_updates=False)
-
+    # aioschedule.every().day.at("04:00", "Moscow").do(Delayer.set_today_schedule,
+    #                                                 db_session.create_session(), post_func)
+    # ToDo uncomment when post_func is done

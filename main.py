@@ -17,6 +17,19 @@ dp = Dispatcher(bot, storage=storage)
 db_session.global_init("data.db3")
 
 
+def create_list_of_channels(user_id):
+    db_sess = db_session.create_session()
+    db_id = db_sess.query(User).filter(User.tg_id == user_id).first().id
+    list_of_channels = db_sess.query(Channel).filter(Channel.user_id == db_id).all()
+    db_sess.close()
+    result = []
+    for i in list_of_channels:
+        username = i.ch_username
+        if username:
+            result.append(f'\n@{username}')
+    return result
+
+
 # registration
 @dp.message_handler(commands='start')
 async def start(message: types.Message):
@@ -68,34 +81,28 @@ async def get_message_from_channel(message: types.Message, state: FSMContext):
 async def administration_check(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         try:
-            print(await bot.get_chat_member(data['tg_id'], int(config.TOKEN.split(':')[0])))
-            for i in await bot.get_chat_administrators(data['tg_id']):
-                if i["user"]['id'] == int(config.TOKEN.split(':')[0]):
-                    break
+            member = await bot.get_chat_member(data['tg_id'], int(config.TOKEN.split(':')[0]))
+            if member['status'] == "administrator":
+                db_sess = db_session.create_session()
+                user = Channel(user_id=data['user_id'], tg_id=data['tg_id'], ch_username=data['username'])
+                db_sess.add(user)
+                db_sess.commit()
+                db_sess.close()
+                await message.answer('Успех')
+                await state.finish()
             else:
                 await message.answer('Вы ещё не сделали бота администратором, пожалуйста повторите попытку')
-            await message.answer('Успех')
-            db_sess = db_session.create_session()
-            user = Channel(user_id=data['user_id'], tg_id=data['tg_id'], ch_username=data['username'])
-            db_sess.add(user)
-            db_sess.commit()
-            db_sess.close()
-            await state.finish()
+
         except Exception as e:
             if str(e) == "Member list is inaccessible":
-                await message.answer('Вы ещё не сделали бота администратором или указали неверный канал,пожалуйста '
-                                     f'начните заново, ошибка: "{e}"')
+                await message.answer(f'Что-то пошло не так, ошибка: "{e}"')
                 await state.finish()
 
 
 # list of channels
 @dp.message_handler(commands=['channels_list', 'list_of_channels'])
 async def get_list_of_channels(message: types.Message):
-    db_sess = db_session.create_session()
-    user_id = int(message['from']['id'])
-    db_id = db_sess.query(User).filter(User.tg_id == user_id).first().id
-    list_of_channels = db_sess.query(Channel).filter(Channel.user_id == db_id).all()
-    db_sess.close()
+    list_of_channels = create_list_of_channels(int(message['from']['id']))
     if len(list_of_channels) == 0:
         await message.answer('Вы ещё не добавили ни один канал')
     else:

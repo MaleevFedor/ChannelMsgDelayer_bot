@@ -138,7 +138,12 @@ async def forward(message: types.Message, state: FSMContext):
 @dp.message_handler(state=ForwardingMessages.WaitingForTimeToSchedule, content_types=types.ContentType.TEXT)
 async def forward_time(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
-        data['pubdate'] = message.text
+        try:
+            data['pubdate'] = datetime.datetime.strptime(message.text, '%Y-%m-%d-%H:%M:%S')
+        except:
+            await message.answer('Неверно указана дата. Попробуйте еще раз')
+            await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
+            return
     await message.answer('Напишите айди канала, в который нужно прислать сообщение')
     await ForwardingMessages.next()
 
@@ -147,17 +152,14 @@ async def forward_time(message: types.Message, state: FSMContext):
 async def forward_channel(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         data['channel_id'] = message.text
-        await message.answer(data)
-        await message.answer(message.from_user.id)
-        dt = datetime.datetime.strptime(data['pubdate'], '%Y-%m-%d-%H:%M:%S')
-        await message.answer(dt)
         db_sess = db_session.create_session()
-        Msg = Message(tg_id=data['message_id'], sender_id=message.from_user.id, channel_id=data['channel_id'],date=dt)
+        Msg = Message(tg_id=data['message_id'], sender_id=message.from_user.id, channel_id=data['channel_id'], date=data['pubdate'])
         db_sess.add(Msg)
         db_sess.commit()
         db_sess.close()
+        await message.answer('Сообщение успешно запланировано на', str(data['pubdate']))
     await state.finish()
-    await message.answer('i sex uyr mom')
+
 
 
 async def post_message():
@@ -168,5 +170,5 @@ if __name__ == '__main__':
     # Delayer.set_today_schedule(db_session.create_session(), post_message)
     executor.start_polling(dp, skip_updates=False)
     # aioschedule.every().day.at("04:00", "Moscow").do(Delayer.set_today_schedule,
-    #                                                 db_session.create_session(), post_func)
+    # db_session.create_session(), post_func)
     # ToDo uncomment when post_func is done

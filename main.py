@@ -3,10 +3,12 @@ from aiogram import Bot, Dispatcher, executor, types
 from data import db_session
 from data.user_class import User
 from data.channel_class import Channel
+from data.message_class import Message
 import config
 from aiogram.dispatcher import FSMContext
 from fsm import ForwardingMessages, AddChannels
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
+import datetime
 import Delayer
 import aioschedule
 
@@ -120,12 +122,46 @@ async def start_forwarding(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=ForwardingMessages.WaitingForMessage, content_types=types.ContentType.ANY)
 async def forward(message: types.Message, state: FSMContext):
-    if message.text is not None:
-        await bot.send_message(-1001945938118, message.text)
-    elif message.photo is not None:
-        await bot.send_photo(chat_id=-1001945938118, photo=message.photo[-1].file_id,
-                             caption=message.caption)
+    # try:
+    #     await message.send_copy(chat_id=-1001945938118)
+    # except TypeError:
+    #     await message.reply(text='Данный тип апдейтов не поддерживается '
+    #                              'методом send_copy')
+    msg_id = message.message_id
+    async with state.proxy() as data:
+        data['message_id'] = msg_id
+    await ForwardingMessages.next()
+
+    await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm:ss")
+
+
+@dp.message_handler(state=ForwardingMessages.WaitingForTimeToSchedule, content_types=types.ContentType.TEXT)
+async def forward_time(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data['pubdate'] = message.text
+    await message.answer('Напишите айди канала, в который нужно прислать сообщение')
+    await ForwardingMessages.next()
+
+#TODO buttons instead of typing channel's ID
+@dp.message_handler(state=ForwardingMessages.WaitingForChannelsToBeChosen, content_types=types.ContentType.TEXT)
+async def forward_channel(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data['channel_id'] = message.text
+        await message.answer(data)
+        await message.answer(message.from_user.id)
+        dt = datetime.datetime.strptime(data['pubdate'], '%Y-%m-%d-%H:%M:%S')
+        await message.answer(dt)
+        db_sess = db_session.create_session()
+        Msg = Message(tg_id=data['message_id'], sender_id=message.from_user.id, channel_id=data['channel_id'],date=dt)
+        db_sess.add(Msg)
+        db_sess.commit()
+        db_sess.close()
     await state.finish()
+    await message.answer('i sex uyr mom')
+
+
+async def post_message():
+    pass
 
 
 if __name__ == '__main__':

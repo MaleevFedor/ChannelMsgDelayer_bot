@@ -13,18 +13,11 @@ import datetime
 # import aioschedule
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-
 logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
 bot = Bot(token=config.TOKEN)
 dp = Dispatcher(bot, storage=storage)
 db_session.global_init("data.db3")
-
-
-async def super_function(bot_u: Bot):
-    await bot_u.send_message(1186221701, "FUCK JOE BIDEN")
-    #print("FUCK JOE BIDEN")
-
 
 
 async def create_list_of_channels(user_id):
@@ -36,7 +29,7 @@ async def create_list_of_channels(user_id):
     for i in list_of_channels:
         username = i.ch_username
         if username:
-            result.append(f'\n@{username}')
+            result.append(f'@{username}')
     return result
 
 
@@ -116,9 +109,9 @@ async def get_list_of_channels(message: types.Message):
     if len(list_of_channels) == 0:
         await message.answer('Вы ещё не добавили ни один канал')
     else:
-        result = 'Ваши добавленные каналы:'
+        result = 'Ваши добавленные каналы:\n'
         for i in list_of_channels:
-            if i: result += i
+            if i: result += i + '\n'
         await message.answer(result)
 
 
@@ -140,62 +133,73 @@ async def forward(message: types.Message, state: FSMContext):
         data['message_id'] = msg_id
     await ForwardingMessages.next()
 
-    await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm:ss")
+    await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
 
 
 @dp.message_handler(state=ForwardingMessages.WaitingForTimeToSchedule, content_types=types.ContentType.TEXT)
 async def forward_time(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         try:
-            data['pubdate'] = datetime.datetime.strptime(message.text, '%Y-%m-%d-%H:%M:%S')
+            data['pubdate'] = datetime.datetime.strptime(message.text, '%Y-%m-%d-%H:%M')
         except:
             await message.answer('Неверно указана дата. Попробуйте еще раз')
             await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
             return
-    await message.answer('Напишите айди канала, в который нужно прислать сообщение')
+    list_of_channels = await create_list_of_channels(message['from']['id'])
+    kb = [
+        [types.KeyboardButton(text=i) for i in list_of_channels]
+    ]
+    keyboard = types.ReplyKeyboardMarkup(
+        keyboard=kb,
+        resize_keyboard=True,
+        input_field_placeholder="Выберите канал",
+        one_time_keyboard=True
+    )
+    await message.answer('Выберите канал, в который нужно отправить сообщение',
+                         reply_markup=keyboard)
     await ForwardingMessages.next()
 
 
-#TODO buttons instead of typing channel's ID
 @dp.message_handler(state=ForwardingMessages.WaitingForChannelsToBeChosen, content_types=types.ContentType.TEXT)
 async def forward_channel(message: types.Message, state: FSMContext):
+    types.reply_keyboard.ReplyKeyboardRemove(True)
     async with state.proxy() as data:
-        data['channel_id'] = message.text
         db_sess = db_session.create_session()
-        msg = Message(tg_id=data['message_id'], sender_id=message.from_user.id, channel_id=data['channel_id'], date=data['pubdate'])
+        sender_id = db_sess.query(User).filter(User.tg_id == int(message.from_user.id)).first().id
+        channel_id = db_sess.query(Channel).filter('@' + Channel.ch_username == message.text).first().id
+        msg = Message(tg_id=data['message_id'], date=data['pubdate'],
+                      sender_id=sender_id, channel_id=channel_id)
         db_sess.add(msg)
         db_sess.commit()
         db_sess.close()
-        await message.answer('Сообщение успешно запланировано на '+ str(data['pubdate']))
+        await message.answer('Сообщение успешно запланировано на ' + str(data['pubdate']),
+                             reply_markup=types.ReplyKeyboardRemove())
     await state.finish()
 
 
-
 async def check_and_post(bot: Bot):
-    with db_session.create_session() as session:
-        result = session.query(Message).filter(Message.date <= datetime.datetime.now())
-        for row in result:
-            await post_message(row)
-
-#async for message in get_chat_history(chat_id):
- #   print(message.text)
+    db_sess = db_session.create_session()
+    result = db_sess.query(Message).filter(Message.date <= datetime.datetime.now()).all()
+    for row in result:
+        await post_message(row, db_sess)
+    db_sess.close()
 
 
-async def post_message(row):
-    await bot.copy_message(chat_id=row.channel_id, from_chat_id=row.sender_id, message_id=row.tg_id)
+# async for message in get_chat_history(chat_id):
+#   print(message.text)
 
+
+async def post_message(row, db_sess):
+    channel_id = db_sess.query(Channel).filter(row.channel_id == Channel.id).first().tg_id
+    sender_id = db_sess.query(User).filter(row.sender_id == User.id).first().tg_id
+    await bot.copy_message(chat_id=channel_id, from_chat_id=sender_id, message_id=row.tg_id)
 
 
 scheduler = AsyncIOScheduler()
 
-scheduler.add_job(check_and_post, trigger='interval', seconds=5, args=(bot,))
+scheduler.add_job(check_and_post, trigger='interval', seconds=30, args=(bot,))
 
 scheduler.start()
 
-
 if __name__ == '__main__':
-    # Delayer.set_today_schedule(db_session.create_session(), post_message)
     executor.start_polling(dp, skip_updates=False)
-    # aioschedule.every().day.at("04:00", "Moscow").do(Delayer.set_today_schedule,
-    # db_session.create_session(), post_func)
-    # ToDo uncomment when post_func is done

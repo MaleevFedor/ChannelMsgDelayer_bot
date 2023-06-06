@@ -9,14 +9,23 @@ from aiogram.dispatcher import FSMContext
 from fsm import ForwardingMessages, AddChannels
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 import datetime
-import Delayer
-import aioschedule
+# import Delayer
+# import aioschedule
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
 
 logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
 bot = Bot(token=config.TOKEN)
 dp = Dispatcher(bot, storage=storage)
 db_session.global_init("data.db3")
+
+
+async def super_function(bot_u: Bot):
+    await bot_u.send_message(1186221701, "FUCK JOE BIDEN")
+    #print("FUCK JOE BIDEN")
+
+
 
 
 async def create_list_of_channels(user_id):
@@ -116,6 +125,7 @@ async def get_list_of_channels(message: types.Message):
 
 @dp.message_handler(commands='forward')
 async def start_forwarding(message: types.Message, state: FSMContext):
+    print('I consume drugs')
     await message.answer('Скиньте сообщение для пересылки')
     await state.set_state(ForwardingMessages.WaitingForMessage.state)
 
@@ -153,17 +163,35 @@ async def forward_channel(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         data['channel_id'] = message.text
         db_sess = db_session.create_session()
-        Msg = Message(tg_id=data['message_id'], sender_id=message.from_user.id, channel_id=data['channel_id'], date=data['pubdate'])
-        db_sess.add(Msg)
+        msg = Message(tg_id=data['message_id'], sender_id=message.from_user.id, channel_id=data['channel_id'], date=data['pubdate'])
+        db_sess.add(msg)
         db_sess.commit()
         db_sess.close()
-        await message.answer('Сообщение успешно запланировано на', str(data['pubdate']))
+        await message.answer('Сообщение успешно запланировано на '+ str(data['pubdate']))
     await state.finish()
 
 
 
-async def post_message():
-    pass
+async def check_and_post(bot: Bot):
+    with db_session.create_session() as session:
+        result = session.query(Message).filter(Message.date <= datetime.datetime.now())
+        for row in result:
+            await post_message(row)
+
+#async for message in get_chat_history(chat_id):
+ #   print(message.text)
+
+
+async def post_message(row):
+    await bot.copy_message(chat_id=row.channel_id, from_chat_id=row.sender_id, message_id=row.tg_id)
+
+
+
+scheduler = AsyncIOScheduler()
+
+scheduler.add_job(check_and_post, trigger='interval', seconds=5, args=(bot,))
+
+scheduler.start()
 
 
 if __name__ == '__main__':

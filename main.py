@@ -27,7 +27,6 @@ async def super_function(bot_u: Bot):
 
 
 
-
 async def create_list_of_channels(user_id):
     db_sess = db_session.create_session()
     db_id = db_sess.query(User).filter(User.tg_id == user_id).first().id
@@ -125,7 +124,6 @@ async def get_list_of_channels(message: types.Message):
 
 @dp.message_handler(commands='forward')
 async def start_forwarding(message: types.Message, state: FSMContext):
-    print('I consume drugs')
     await message.answer('Скиньте сообщение для пересылки')
     await state.set_state(ForwardingMessages.WaitingForMessage.state)
 
@@ -156,6 +154,7 @@ async def forward_time(message: types.Message, state: FSMContext):
             return
     await message.answer('Напишите айди канала, в который нужно прислать сообщение')
     await ForwardingMessages.next()
+
 
 #TODO buttons instead of typing channel's ID
 @dp.message_handler(state=ForwardingMessages.WaitingForChannelsToBeChosen, content_types=types.ContentType.TEXT)

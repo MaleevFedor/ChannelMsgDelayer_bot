@@ -60,23 +60,27 @@ async def add_channel(message: types.Message, state: FSMContext):
 @dp.message_handler(state=AddChannels.WaitingForMessage.state, content_types=[types.ContentType.ANY])
 async def get_message_from_channel(message: types.Message, state: FSMContext):
     db_sess = db_session.create_session()
-    channel_id = message['forward_from_chat']['id']
-    cur_user_id = db_sess.query(User).filter(User.tg_id == int(message['from']['id'])).first().id
-    if db_sess.query(Channel).filter(Channel.tg_id == channel_id,
+    try:
+        channel_id = message['forward_from_chat']['id']
+        cur_user_id = db_sess.query(User).filter(User.tg_id == int(message['from']['id'])).first().id
+        if db_sess.query(Channel).filter(Channel.tg_id == channel_id,
                                      Channel.user_id == cur_user_id).first():
-        await message.reply("Вы уже добавили этот канал, попробуйте ещё раз")
-        await state.finish()
-    else:
-        async with state.proxy() as data:
-            data['user_id'] = cur_user_id
-            data['tg_id'] = channel_id
-            data['username'] = message['forward_from_chat']['username']
-        await message.answer(f'''Вы добавили канал: @{message['forward_from_chat']['username']}. Для завершения сделайте 
+            await message.reply("Вы уже добавили этот канал, попробуйте ещё раз")
+            await state.finish()
+        else:
+            async with state.proxy() as data:
+                data['user_id'] = cur_user_id
+                data['tg_id'] = channel_id
+                data['username'] = message['forward_from_chat']['username']
+            await message.answer(f'''Вы добавили канал: @{message['forward_from_chat']['username']}. Для завершения сделайте 
 <code>@ChannelMsgDelayer_bot</code> администратором вашего канала
 Напишите /check когда сделаете бота администратором
 или /cancel для отмены''', parse_mode='HTML')
-        await AddChannels.next()
-        db_sess.close()
+            await AddChannels.next()
+            db_sess.close()
+    except Exception as e:
+        if type(e) == TypeError:
+            await message.answer('вы не переслали сообщение, попробуйте ещё раз')
 
 
 # adding a new channel
@@ -97,9 +101,8 @@ async def administration_check(message: types.Message, state: FSMContext):
                 await message.answer('Вы ещё не сделали бота администратором, пожалуйста повторите попытку')
 
         except Exception as e:
-            if str(e) == "Member list is inaccessible":
-                await message.answer(f'Что-то пошло не так, ошибка: "{e}"')
-                await state.finish()
+            await message.answer(f'Что-то пошло не так, ошибка: "{e}"')
+            await state.finish()
 
 
 # list of channels
@@ -193,11 +196,13 @@ async def post_message(row, db_sess):
     channel_id = db_sess.query(Channel).filter(row.channel_id == Channel.id).first().tg_id
     sender_id = db_sess.query(User).filter(row.sender_id == User.id).first().tg_id
     await bot.copy_message(chat_id=channel_id, from_chat_id=sender_id, message_id=row.tg_id)
+    db_sess.query(Message).filter(Message.id == row.id).delete()
+    db_sess.commit()
 
 
 scheduler = AsyncIOScheduler()
 
-scheduler.add_job(check_and_post, trigger='interval', seconds=30, args=(bot,))
+scheduler.add_job(check_and_post, trigger='interval', seconds=5, args=(bot,))
 
 scheduler.start()
 

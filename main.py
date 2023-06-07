@@ -89,7 +89,8 @@ async def administration_check(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         try:
             member = await bot.get_chat_member(data['tg_id'], int(config.TOKEN.split(':')[0]))
-            if member['status'] == "administrator":
+            sender = await bot.get_chat_member(data['tg_id'], message.from_user.id)
+            if member['status'] == "administrator" and sender['status'] == "administrator":
                 db_sess = db_session.create_session()
                 user = Channel(user_id=data['user_id'], tg_id=data['tg_id'], ch_username=data['username'])
                 db_sess.add(user)
@@ -98,7 +99,8 @@ async def administration_check(message: types.Message, state: FSMContext):
                 await message.answer('Успех')
                 await state.finish()
             else:
-                await message.answer('Вы ещё не сделали бота администратором, пожалуйста повторите попытку')
+                await message.answer('Вы не являетесь администратором этого канала')
+                await state.finish()
 
         except Exception as e:
             await message.answer(f'Что-то пошло не так, ошибка: "{e}"')

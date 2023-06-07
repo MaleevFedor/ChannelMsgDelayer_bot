@@ -9,4 +9,3 @@ class Message(SqlAlchemyBase):
     sender_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
     channel_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
     date = sqlalchemy.Column(sqlalchemy.DateTime)
-    send = sqlalchemy.Column(sqlalchemy.Boolean, default=False)

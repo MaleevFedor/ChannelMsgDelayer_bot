@@ -90,7 +90,10 @@ async def administration_check(message: types.Message, state: FSMContext):
         try:
             member = await bot.get_chat_member(data['tg_id'], int(config.TOKEN.split(':')[0]))
             sender = await bot.get_chat_member(data['tg_id'], message.from_user.id)
-            if member['status'] == "administrator" and sender['status'] == "administrator":
+            if not member["can_post_messages"]:
+                await message.answer('Дайте боту возможность писать сообщения, и повторите попытку(/check)')
+            elif member['status'] == "administrator" \
+                    and sender['status'] == "administrator" or sender['status'] == "creator":
                 db_sess = db_session.create_session()
                 user = Channel(user_id=data['user_id'], tg_id=data['tg_id'], ch_username=data['username'])
                 db_sess.add(user)
@@ -171,14 +174,20 @@ async def forward_channel(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         db_sess = db_session.create_session()
         sender_id = db_sess.query(User).filter(User.tg_id == int(message.from_user.id)).first().id
-        channel_id = db_sess.query(Channel).filter('@' + Channel.ch_username == message.text).first().id
-        msg = Message(tg_id=data['message_id'], date=data['pubdate'],
-                      sender_id=sender_id, channel_id=channel_id)
-        db_sess.add(msg)
-        db_sess.commit()
-        db_sess.close()
-        await message.answer('Сообщение успешно запланировано на ' + str(data['pubdate']),
-                             reply_markup=types.ReplyKeyboardRemove())
+        channel_id = db_sess.query(Channel).filter('@' + Channel.ch_username == message.text,
+                                                   sender_id == Channel.user_id).first()
+
+        if channel_id:
+            msg = Message(tg_id=data['message_id'], date=data['pubdate'],
+                          sender_id=sender_id, channel_id=channel_id.id)
+            db_sess.add(msg)
+            db_sess.commit()
+            db_sess.close()
+            await message.answer('Сообщение успешно запланировано на ' + str(data['pubdate']),
+                                 reply_markup=types.ReplyKeyboardRemove())
+        else:
+            await message.answer('Вы не добавили этот канал, пожалуйста, сначала добавьте его при помощи /add_channel',
+                                 reply_markup=types.ReplyKeyboardRemove())
     await state.finish()
 
 

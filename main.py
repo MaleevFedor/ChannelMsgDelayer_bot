@@ -6,13 +6,15 @@ from data.channel_class import Channel
 from data.message_class import Message
 import config
 from aiogram.dispatcher import FSMContext
-from fsm import ForwardingMessages, AddChannels
+from fsm import ForwardingMessages, AddChannels#, DealWithPhotos
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 import datetime
 # import Delayer
 # import aioschedule
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
+from typing import List, Union
+from aiogram.dispatcher.handler import CancelHandler
+from aiogram.dispatcher.middlewares import BaseMiddleware
 logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
 bot = Bot(token=config.TOKEN)
@@ -125,23 +127,80 @@ async def get_list_of_channels(message: types.Message):
 
 @dp.message_handler(commands='forward')
 async def start_forwarding(message: types.Message, state: FSMContext):
+ #   async with state.proxy() as data:
+ #       data['sender_id'] = message.from_user.id
     await message.answer('Скиньте сообщение для пересылки')
     await state.set_state(ForwardingMessages.WaitingForMessage.state)
 
 
-@dp.message_handler(state=ForwardingMessages.WaitingForMessage, content_types=types.ContentType.ANY)
-async def forward(message: types.Message, state: FSMContext):
+#@dp.message_handler(is_media_group=False, state=ForwardingMessages.WaitingForMessage, content_types=types.ContentType.ANY)
+#async def forward(message: types.Message, state: FSMContext):
     # try:
     #     await message.send_copy(chat_id=-1001945938118)
     # except TypeError:
     #     await message.reply(text='Данный тип апдейтов не поддерживается '
     #                              'методом send_copy')
-    msg_id = message.message_id
-    async with state.proxy() as data:
-        data['message_id'] = msg_id
-    await ForwardingMessages.next()
+    # return
+    # msg_id = message.message_id
+    # async with state.proxy() as data:
+    #     data['message_id'] = [msg_id]
+    # await ForwardingMessages.next()
+    #
+    # await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
 
+
+
+# async def forward_photos(message, state: FSMContext):
+#     await photo_handler(message=message)
+#     #async with state.proxy() as data:
+#     #    data['photo_id'] = []
+#     #    file_info_1 = message.photo[-1].file_id
+#     #    data['photo_id'].append(file_info_1)
+#      #
+#      #   try:
+#      #       file_info_1 = message.message_id
+#      #       data['message_id'].append(file_info_1)
+#      #   except Exception as e:
+#      #       print(e)
+#     await ForwardingMessages.next()
+#
+#     await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
+#
+# #async def handle_with_media_group(message, data):
+
+
+@dp.message_handler(is_media_group=True,content_types=types.ContentType.PHOTO, state=ForwardingMessages.WaitingForMessage)
+async def forward_photo(message: types.Message, state: FSMContext):
+    # we are here if the first message.content_type == 'photo'
+
+    # save the largest photo (message.photo[-1]) in FSM, and start photo_counter
+    await state.update_data(photo_0=message.photo[-1].file_id, photo_counter=0)
+
+    await state.set_state(ForwardingMessages.NextPhoto.state)
+
+
+@dp.message_handler(content_types=['photo'], state=ForwardingMessages.NextPhoto)
+async def next_photo_handler(message: types.Message, state: FSMContext):
+    # we are here if the second and next messages are photos
+
+    async with state.proxy() as data:
+        data['photo_counter'] += 1
+        photo_counter = data['photo_counter']
+        data[f'photo_{photo_counter}'] = message.photo[-1].file_id
+    await state.set_state(ForwardingMessages.NextPhoto.state)
+
+
+@dp.message_handler(state=ForwardingMessages.NextPhoto)
+async def not_photo_handler(message: types.Message, state: FSMContext):
+    # we are here if the second and next messages are not photos
+
+   # async with state.proxy() as data:
+        # here you can do something with data dictionary with all photos
+   #     print(data)
     await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
+    await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
+
+
 
 
 @dp.message_handler(state=ForwardingMessages.WaitingForTimeToSchedule, content_types=types.ContentType.TEXT)
@@ -168,6 +227,10 @@ async def forward_time(message: types.Message, state: FSMContext):
     await ForwardingMessages.next()
 
 
+@dp.message_handler(is_media_group=True, content_types=types.ContentType.ANY)
+async def test(message: types.Message):
+    await message.answer(message)
+
 @dp.message_handler(state=ForwardingMessages.WaitingForChannelsToBeChosen, content_types=types.ContentType.TEXT)
 async def forward_channel(message: types.Message, state: FSMContext):
     types.reply_keyboard.ReplyKeyboardRemove(True)
@@ -178,11 +241,22 @@ async def forward_channel(message: types.Message, state: FSMContext):
                                                    sender_id == Channel.user_id).first()
 
         if channel_id:
-            msg = Message(tg_id=data['message_id'], date=data['pubdate'],
-                          sender_id=sender_id, channel_id=channel_id.id)
-            db_sess.add(msg)
-            db_sess.commit()
-            db_sess.close()
+            if data['photo_counter']:
+                x = data['photo_counter']
+                for i in range(x+1):
+                    msg = Message(tg_id=data[f'photo_{i}'], date=data['pubdate'],
+                                  sender_id=sender_id, channel_id=channel_id.id, is_part_mediagroup=True)
+                    db_sess.add(msg)
+                    db_sess.commit()
+                db_sess.close()
+                await message.answer('Сообщение успешно запланировано на ' + str(data['pubdate']),
+                                     reply_markup=types.ReplyKeyboardRemove())
+            else:
+                msg = Message(tg_id=data['message_id'], date=data['pubdate'],
+                              sender_id=sender_id, channel_id=channel_id.id, is_part_mediagroup=False)
+                db_sess.add(msg)
+                db_sess.commit()
+                db_sess.close()
             await message.answer('Сообщение успешно запланировано на ' + str(data['pubdate']),
                                  reply_markup=types.ReplyKeyboardRemove())
         else:
@@ -206,6 +280,9 @@ async def check_and_post(bot: Bot):
 async def post_message(row, db_sess):
     channel_id = db_sess.query(Channel).filter(row.channel_id == Channel.id).first().tg_id
     sender_id = db_sess.query(User).filter(row.sender_id == User.id).first().tg_id
+    if row.is_part_mediagroup == True:
+        await bot.send_photo(chat_id=channel_id, photo=row.tg_id)
+
     await bot.copy_message(chat_id=channel_id, from_chat_id=sender_id, message_id=row.tg_id)
     db_sess.query(Message).filter(Message.id == row.id).delete()
     db_sess.commit()

@@ -171,9 +171,7 @@ async def start_forwarding(message: types.Message, state: FSMContext):
 
 @dp.message_handler(is_media_group=True,content_types=types.ContentType.PHOTO, state=ForwardingMessages.WaitingForMessage)
 async def forward_photo(message: types.Message, state: FSMContext):
-    # we are here if the first message.content_type == 'photo'
-
-    # save the largest photo (message.photo[-1]) in FSM, and start photo_counter
+    #сейвим первое фото + начинаем counter
     await state.update_data(photo_0=message.photo[-1].file_id, photo_counter=0)
 
     await state.set_state(ForwardingMessages.NextPhoto.state)
@@ -181,7 +179,7 @@ async def forward_photo(message: types.Message, state: FSMContext):
 
 @dp.message_handler(content_types=['photo'], state=ForwardingMessages.NextPhoto)
 async def next_photo_handler(message: types.Message, state: FSMContext):
-    # we are here if the second and next messages are photos
+    # здесь находимся пока все следуюище сообщения - фото
 
     async with state.proxy() as data:
         data['photo_counter'] += 1
@@ -192,11 +190,8 @@ async def next_photo_handler(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=ForwardingMessages.NextPhoto)
 async def not_photo_handler(message: types.Message, state: FSMContext):
-    # we are here if the second and next messages are not photos
+    # сюда попадаем если следующее сообщение - не фото
 
-   # async with state.proxy() as data:
-        # here you can do something with data dictionary with all photos
-   #     print(data)
     await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
     await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
 

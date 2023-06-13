@@ -10,3 +10,4 @@ class Message(SqlAlchemyBase):
     channel_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
     date = sqlalchemy.Column(sqlalchemy.DateTime)
     is_part_mediagroup = sqlalchemy.Column(sqlalchemy.Boolean)
+    id_mediagroup = sqlalchemy.Column(sqlalchemy.Integer)

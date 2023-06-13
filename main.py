@@ -175,9 +175,9 @@ async def start_forwarding(message: types.Message, state: FSMContext):
 
 @dp.message_handler(content_types=types.ContentType.ANY, state=ForwardingMessages.WaitingForMessage)
 async def forward(message: types.Message, state: FSMContext):
-    if message.content_type is 'photo':
+    if message.content_type == 'photo':
         await state.update_data(photo_0=message.photo[-1].file_id, photo_counter=0)
-        await message.answer('После альбома напишите подпись к нему. Если подписи нет, то поставьте прочерк "-"')
+
         await state.set_state(ForwardingMessages.NextPhoto.state)
     else:
         async with state.proxy() as data:
@@ -296,10 +296,11 @@ async def check_and_post(bot: Bot):
 async def post_message(row, db_sess):
     channel_id = db_sess.query(Channel).filter(row.channel_id == Channel.id).first().tg_id
     sender_id = db_sess.query(User).filter(row.sender_id == User.id).first().tg_id
-    if row.is_part_mediagroup == True:
+    if row.is_part_mediagroup:
         await bot.send_photo(chat_id=channel_id, photo=row.tg_id)
 
-    await bot.copy_message(chat_id=channel_id, from_chat_id=sender_id, message_id=row.tg_id)
+    else:
+        await bot.copy_message(chat_id=channel_id, from_chat_id=sender_id, message_id=row.tg_id)
     db_sess.query(Message).filter(Message.id == row.id).delete()
     db_sess.commit()
 

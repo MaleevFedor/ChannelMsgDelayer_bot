@@ -133,20 +133,24 @@ async def start_forwarding(message: types.Message, state: FSMContext):
     await state.set_state(ForwardingMessages.WaitingForMessage.state)
 
 
-#@dp.message_handler(is_media_group=False, state=ForwardingMessages.WaitingForMessage, content_types=types.ContentType.ANY)
-#async def forward(message: types.Message, state: FSMContext):
-    # try:
-    #     await message.send_copy(chat_id=-1001945938118)
-    # except TypeError:
-    #     await message.reply(text='Данный тип апдейтов не поддерживается '
-    #                              'методом send_copy')
-    # return
-    # msg_id = message.message_id
-    # async with state.proxy() as data:
-    #     data['message_id'] = [msg_id]
-    # await ForwardingMessages.next()
-    #
-    # await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
+# @dp.message_handler(is_media_group=False, state=ForwardingMessages.WaitingForMessage, content_types=types.ContentType.ANY)
+# async def forward(message: types.Message, state: FSMContext):
+#     await message.answer('После альбома напишите подпись к нему. Если подписи нет, то поставьте прочерк "-"')
+#     # try:
+#     #     await message.send_copy(chat_id=-1001945938118)
+#     # except TypeError:
+#     #     await message.reply(text='Данный тип апдейтов не поддерживается '
+#     #                              'методом send_copy')
+#     # return
+#     # msg_id = message.message_id
+#     async with state.proxy() as data:
+#         if message.text == '-':
+#             await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
+#             return
+#         data['message_id'] = message.message_id
+#     await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
+#     await ForwardingMessages.next()
+
 
 
 
@@ -169,12 +173,17 @@ async def start_forwarding(message: types.Message, state: FSMContext):
 # #async def handle_with_media_group(message, data):
 
 
-@dp.message_handler(is_media_group=True,content_types=types.ContentType.PHOTO, state=ForwardingMessages.WaitingForMessage)
-async def forward_photo(message: types.Message, state: FSMContext):
-    #сейвим первое фото + начинаем counter
-    await state.update_data(photo_0=message.photo[-1].file_id, photo_counter=0)
-
-    await state.set_state(ForwardingMessages.NextPhoto.state)
+@dp.message_handler(content_types=types.ContentType.ANY, state=ForwardingMessages.WaitingForMessage)
+async def forward(message: types.Message, state: FSMContext):
+    if message.content_type is 'photo':
+        await state.update_data(photo_0=message.photo[-1].file_id, photo_counter=0)
+        await message.answer('После альбома напишите подпись к нему. Если подписи нет, то поставьте прочерк "-"')
+        await state.set_state(ForwardingMessages.NextPhoto.state)
+    else:
+        async with state.proxy() as data:
+            data['message_id'] = message.message_id
+            await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
+            await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
 
 
 @dp.message_handler(content_types=['photo'], state=ForwardingMessages.NextPhoto)
@@ -188,10 +197,16 @@ async def next_photo_handler(message: types.Message, state: FSMContext):
     await state.set_state(ForwardingMessages.NextPhoto.state)
 
 
-@dp.message_handler(state=ForwardingMessages.NextPhoto)
+@dp.message_handler(content_types=['text'], state=ForwardingMessages.NextPhoto)
 async def not_photo_handler(message: types.Message, state: FSMContext):
     # сюда попадаем если следующее сообщение - не фото
 
+    async with state.proxy() as data:
+        if message.text == '-':
+            await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
+            await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
+        else:
+            data['message_id'] = message.message_id
     await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
     await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
 
@@ -236,17 +251,23 @@ async def forward_channel(message: types.Message, state: FSMContext):
                                                    sender_id == Channel.user_id).first()
 
         if channel_id:
-            if data['photo_counter']:
+            try:
                 x = data['photo_counter']
                 for i in range(x+1):
                     msg = Message(tg_id=data[f'photo_{i}'], date=data['pubdate'],
                                   sender_id=sender_id, channel_id=channel_id.id, is_part_mediagroup=True)
                     db_sess.add(msg)
                     db_sess.commit()
+                try:
+                    x = data['message_id']
+                    msg = Message(tg_id=data['message_id'], date=data['pubdate'],
+                                  sender_id=sender_id, channel_id=channel_id.id, is_part_mediagroup=True)
+                except KeyError:
+                    pass
                 db_sess.close()
                 await message.answer('Сообщение успешно запланировано на ' + str(data['pubdate']),
                                      reply_markup=types.ReplyKeyboardRemove())
-            else:
+            except KeyError:
                 msg = Message(tg_id=data['message_id'], date=data['pubdate'],
                               sender_id=sender_id, channel_id=channel_id.id, is_part_mediagroup=False)
                 db_sess.add(msg)

@@ -205,11 +205,11 @@ async def not_photo_handler(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         if message.text == '-':
             await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
-            await message.answer('я насиловал твою мать')
+           # await message.answer('я насиловал твою мать')
             await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
         else:
             data['message_id'] = message.message_id
-            await message.answer('иди нахуй тупая тварь')
+           # await message.answer('иди нахуй тупая тварь')
     await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
     await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
 
@@ -239,12 +239,10 @@ async def forward_time(message: types.Message, state: FSMContext):
                          reply_markup=keyboard)
     await ForwardingMessages.next()
 
-media = types.MediaGroup()
-
 
 @dp.message_handler(is_media_group=True, content_types=types.ContentType.ANY)
 async def test(message: types.Message):
-    await bot.send_media_group()
+    await message.answer(message)
 
 @dp.message_handler(state=ForwardingMessages.WaitingForChannelsToBeChosen, content_types=types.ContentType.TEXT)
 async def forward_channel(message: types.Message, state: FSMContext):
@@ -260,15 +258,13 @@ async def forward_channel(message: types.Message, state: FSMContext):
                 x = data['photo_counter']
                 for i in range(x+1):
                     msg = Message(tg_id=data[f'photo_{i}'], date=data['pubdate'],
-                                  sender_id=sender_id, channel_id=channel_id.id, is_part_mediagroup=True,
-                                  id_mediagroup=data['photo0'])
+                                  sender_id=sender_id, channel_id=channel_id.id, is_part_mediagroup=True)
                     db_sess.add(msg)
                     db_sess.commit()
                 try:
                     x = data['message_id']
                     msg = Message(tg_id=data['message_id'], date=data['pubdate'],
-                                  sender_id=sender_id, channel_id=channel_id.id, is_part_mediagroup=True,
-                                  id_mediagroup=data['photo0'])
+                                  sender_id=sender_id, channel_id=channel_id.id, is_part_mediagroup=True)
                     db_sess.add(msg)
                     db_sess.commit()
                 except KeyError:

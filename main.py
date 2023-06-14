@@ -6,7 +6,7 @@ from data.channel_class import Channel
 from data.message_class import Message
 import config
 from aiogram.dispatcher import FSMContext
-from fsm import ForwardingMessages, AddChannels#, DealWithPhotos
+from fsm import *
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 import datetime
 # import Delayer
@@ -15,6 +15,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from typing import List, Union
 from aiogram.dispatcher.handler import CancelHandler
 from aiogram.dispatcher.middlewares import BaseMiddleware
+
 logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
 bot = Bot(token=config.TOKEN)
@@ -66,7 +67,7 @@ async def get_message_from_channel(message: types.Message, state: FSMContext):
         channel_id = message['forward_from_chat']['id']
         cur_user_id = db_sess.query(User).filter(User.tg_id == int(message['from']['id'])).first().id
         if db_sess.query(Channel).filter(Channel.tg_id == channel_id,
-                                     Channel.user_id == cur_user_id).first():
+                                         Channel.user_id == cur_user_id).first():
             await message.reply("Вы уже добавили этот канал, попробуйте ещё раз")
             await state.finish()
         else:
@@ -125,10 +126,123 @@ async def get_list_of_channels(message: types.Message):
         await message.answer(result)
 
 
+# content plan
+@dp.message_handler(commands='content_plan')
+async def content_plan_channel_choice(message: types.Message, state: FSMContext):
+    list_of_channels = await create_list_of_channels(message['from']['id'])
+    kb = [
+        [types.KeyboardButton(text=i) for i in list_of_channels]
+    ]
+    keyboard = types.ReplyKeyboardMarkup(
+        keyboard=kb,
+        resize_keyboard=True,
+        input_field_placeholder="Выберите канал",
+        one_time_keyboard=True
+    )
+    await message.answer('Выберите канал', reply_markup=keyboard)
+    await state.set_state(ContentPlan.channel_choice.state)
+
+
+# content plan
+@dp.message_handler(state=ContentPlan.channel_choice)
+async def content_plan(message: types.Message, state: FSMContext):
+    types.reply_keyboard.ReplyKeyboardRemove(True)
+    db_sess = db_session.create_session()
+    channel_id = db_sess.query(Channel).filter(message.text == '@' + Channel.ch_username).first().id
+    messages = db_sess.query(Message).filter(Message.channel_id == channel_id).all()
+    if len(messages) == 0:
+        await message.reply('Для этого канала нет запланированных сообщений')
+        return
+    for i in sorted(messages, key=lambda x: x.date):
+        sender = db_sess.query(User).filter(i.sender_id == User.id).first()
+        media_group = False
+        if media_group:
+            pass
+        else:
+            inline_keyboard = types.InlineKeyboardMarkup()
+            inline_keyboard.add(types.InlineKeyboardButton('Изменить сообщение', callback_data='msg-e-' + str(i.id)))
+            inline_keyboard.add(types.InlineKeyboardButton('Удалить сообщение', callback_data='msg-d-' + str(i.id)))
+            inline_keyboard.add(types.InlineKeyboardButton('Опубликовать сообщение сейчас',
+                                                           callback_data='msg-n-' + str(i.id)))
+            await bot.copy_message(chat_id=message.chat.id, from_chat_id=sender.tg_id, message_id=i.tg_id,
+                                   reply_markup=inline_keyboard)
+        await message.answer(f'Сообщение запланировано пользователем: @{sender.username} на время {i.date}')
+    await state.finish()
+    db_sess.close()
+
+
+# delete messages in content plan
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith('msg-'))
+async def process_callback_choose_message_action(callback_query: types.CallbackQuery):
+    code = callback_query.data.split('-')
+    if code[1] == 'e':
+        inline_keyboard = types.InlineKeyboardMarkup()
+        inline_keyboard.add(types.InlineKeyboardButton('Изменить дату отправки', callback_data='e-d-' + code[2]))
+        inline_keyboard.add(types.InlineKeyboardButton('Изменить сообщение', callback_data='e-e-' + code[2]))
+        await bot.send_message(callback_query.from_user.id, 'Что вы хотите изменить?',
+                               reply_markup=inline_keyboard)
+    elif code[1] == 'd':
+        db_sess = db_session.create_session()
+        db_sess.query(Message).filter(Message.id == int(code[2])).delete()
+        db_sess.commit()
+        db_sess.close()
+        await bot.send_message(callback_query.from_user.id, '👌')
+        await bot.send_message(callback_query.from_user.id, '/content_plan обновлен')
+    elif code[1] == 'n':
+        db_sess = db_session.create_session()
+        await post_message(db_sess.query(Message).filter(Message.id == int(code[2])).first(), db_sess)
+        db_sess.query(Message).filter(Message.id == int(code[2])).delete()
+        db_sess.commit()
+        db_sess.close()
+
+
+# edit messages in content plan
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith('e-'))
+async def process_callback_edit_message(callback_query: types.CallbackQuery, state: FSMContext):
+    code = callback_query.data.split('-')
+    async with state.proxy() as data:
+        data['msg_id'] = code[2]
+    if code[1] == 'e':
+        await bot.send_message(callback_query.from_user.id, 'Отправьте измененное сообщение')
+        await state.set_state(ContentPlan.msg_edit)
+    elif code[1] == 'd':
+        await bot.send_message(callback_query.from_user.id,
+                               'Напишите новую дату отправки сообщения в формате yyyy-MM-dd-HH:mm')
+        await state.set_state(ContentPlan.date_edit)
+
+
+@dp.message_handler(state=ContentPlan.date_edit)
+async def message_date_edit(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        db_sess = db_session.create_session()
+        try:
+            date = datetime.datetime.strptime(message.text, '%Y-%m-%d-%H:%M')
+        except:
+            await message.answer('Неверно указана дата. Попробуйте еще раз')
+            await state.set_state(ContentPlan.date_edit)
+            return
+        db_sess.query(Message).filter(Message.id == int(data['msg_id'])).update({'date': date})
+        db_sess.commit()
+        db_sess.close()
+    await message.answer('Новая дата отправки сообщения сохранена')
+    await state.finish()
+
+
+@dp.message_handler(state=ContentPlan.msg_edit)
+async def message_edit(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        db_sess = db_session.create_session()
+        db_sess.query(Message).filter(Message.id == int(data['msg_id'])).update({'tg_id': message.message_id})
+        db_sess.commit()
+        db_sess.close()
+    await message.answer('Сообщение обновлено')
+    await state.finish()
+
+
 @dp.message_handler(commands='forward')
 async def start_forwarding(message: types.Message, state: FSMContext):
- #   async with state.proxy() as data:
- #       data['sender_id'] = message.from_user.id
+    #   async with state.proxy() as data:
+    #       data['sender_id'] = message.from_user.id
     await message.answer('Скиньте сообщение для пересылки')
     await state.set_state(ForwardingMessages.WaitingForMessage.state)
 
@@ -150,8 +264,6 @@ async def start_forwarding(message: types.Message, state: FSMContext):
 #         data['message_id'] = message.message_id
 #     await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
 #     await ForwardingMessages.next()
-
-
 
 
 # async def forward_photos(message, state: FSMContext):
@@ -211,8 +323,6 @@ async def not_photo_handler(message: types.Message, state: FSMContext):
     await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
 
 
-
-
 @dp.message_handler(state=ForwardingMessages.WaitingForTimeToSchedule, content_types=types.ContentType.TEXT)
 async def forward_time(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
@@ -241,6 +351,7 @@ async def forward_time(message: types.Message, state: FSMContext):
 async def test(message: types.Message):
     await message.answer(message)
 
+
 @dp.message_handler(state=ForwardingMessages.WaitingForChannelsToBeChosen, content_types=types.ContentType.TEXT)
 async def forward_channel(message: types.Message, state: FSMContext):
     types.reply_keyboard.ReplyKeyboardRemove(True)
@@ -253,7 +364,7 @@ async def forward_channel(message: types.Message, state: FSMContext):
         if channel_id:
             try:
                 x = data['photo_counter']
-                for i in range(x+1):
+                for i in range(x + 1):
                     msg = Message(tg_id=data[f'photo_{i}'], date=data['pubdate'],
                                   sender_id=sender_id, channel_id=channel_id.id, is_part_mediagroup=True)
                     db_sess.add(msg)

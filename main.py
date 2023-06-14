@@ -15,7 +15,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from typing import List, Union
 from aiogram.dispatcher.handler import CancelHandler
 from aiogram.dispatcher.middlewares import BaseMiddleware
-
+import ast
 logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
 bot = Bot(token=config.TOKEN)
@@ -305,6 +305,7 @@ async def next_photo_handler(message: types.Message, state: FSMContext):
     # здесь находимся пока все следуюище сообщения - фото
 
     async with state.proxy() as data:
+        data['mediagroup_id'] = data['photo_0']
         data['photo_counter'] += 1
         photo_counter = data['photo_counter']
         data[f'photo_{photo_counter}'] = message.photo[-1].file_id
@@ -321,7 +322,7 @@ async def not_photo_handler(message: types.Message, state: FSMContext):
            # await message.answer('я насиловал твою мать')
             await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
         else:
-            data['message_id'] = message.message_id
+            data['message_id'] = message.text
            # await message.answer('иди нахуй тупая тварь')
     await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
     await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
@@ -353,7 +354,10 @@ async def forward_time(message: types.Message, state: FSMContext):
 
 @dp.message_handler(is_media_group=True, content_types=types.ContentType.ANY)
 async def test(message: types.Message):
-    await message.answer(message)
+    media_group = types.MediaGroup()
+    file_id = 'AgACAgIAAxkBAAIJy2SHh7_H4sdWkdxaG-SaN80GUZAyAAKByDEb4w9BSHmsRy0BSZdoAQADAgADcwADLwQ'
+    media_group.attach({"media": file_id, "type": 'photo'})
+    await bot.send_media_group(media=media_group,chat_id=1186221701)
 
 
 @dp.message_handler(state=ForwardingMessages.WaitingForChannelsToBeChosen, content_types=types.ContentType.TEXT)
@@ -370,13 +374,13 @@ async def forward_channel(message: types.Message, state: FSMContext):
                 x = data['photo_counter']
                 for i in range(x + 1):
                     msg = Message(tg_id=data[f'photo_{i}'], date=data['pubdate'],
-                                  sender_id=sender_id, channel_id=channel_id.id, is_part_mediagroup=True)
+                                  sender_id=sender_id, channel_id=channel_id.id, mediagroup_id=data['mediagroup_id'])
                     db_sess.add(msg)
                     db_sess.commit()
                 try:
                     x = data['message_id']
-                    msg = Message(tg_id=data['message_id'], date=data['pubdate'],
-                                  sender_id=sender_id, channel_id=channel_id.id, is_part_mediagroup=True)
+                    msg = Message(tg_id='$'+data['message_id'], date=data['pubdate'],
+                                  sender_id=sender_id, channel_id=channel_id.id, mediagroup_id=data['mediagroup_id'])
                     db_sess.add(msg)
                     db_sess.commit()
                 except KeyError:
@@ -386,7 +390,7 @@ async def forward_channel(message: types.Message, state: FSMContext):
                                      reply_markup=types.ReplyKeyboardRemove())
             except KeyError:
                 msg = Message(tg_id=data['message_id'], date=data['pubdate'],
-                              sender_id=sender_id, channel_id=channel_id.id, is_part_mediagroup=False)
+                              sender_id=sender_id, channel_id=channel_id.id,mediagroup_id=None)
                 db_sess.add(msg)
                 db_sess.commit()
                 db_sess.close()
@@ -400,7 +404,28 @@ async def forward_channel(message: types.Message, state: FSMContext):
 
 async def check_and_post(bot: Bot):
     db_sess = db_session.create_session()
-    result = db_sess.query(Message).filter(Message.date <= datetime.datetime.now()).all()
+    result_mediagroup = db_sess.query(Message).filter(Message.date <= datetime.datetime.now(),
+                                                      Message.mediagroup_id != None).all()
+    result = db_sess.query(Message).filter(Message.date <= datetime.datetime.now(),
+                                           Message.mediagroup_id == None).all()
+    mediagroups = []
+    #await bot.send_message(chat_id=-1001945938118, text=result_mediagroup)
+    for row in result_mediagroup:
+        await bot.send_message(chat_id=-1001945938118, text=result_mediagroup)
+        if row.mediagroup_id in mediagroups:
+            continue
+        else:
+            mediagroups.append(row.mediagroup_id)
+            media_group = types.MediaGroup()
+            result_current_mediagroup = db_sess.query(Message).filter(Message.date <= datetime.datetime.now(),
+                                                      Message.mediagroup_id == row.mediagroup_id).all()
+            caption = []
+            for current_row in result_current_mediagroup:
+                await collect_mediagroup(current_row, db_sess, media_group, caption)
+
+            await send_mediagroup(result_current_mediagroup, db_sess, media_group, caption)
+    #if result_mediagroup:
+    #    await send_mediagroup(result_mediagroup, db_sess, media_group)
     for row in result:
         await post_message(row, db_sess)
     db_sess.close()
@@ -409,17 +434,25 @@ async def check_and_post(bot: Bot):
 async def post_message(row, db_sess):
     channel_id = db_sess.query(Channel).filter(row.channel_id == Channel.id).first().tg_id
     sender_id = db_sess.query(User).filter(row.sender_id == User.id).first().tg_id
-    if row.is_part_mediagroup:
-        try:
-            int(row.tg_id)
-            await bot.copy_message(chat_id=channel_id, from_chat_id=sender_id, message_id=row.tg_id)
-        except ValueError:
-            await bot.send_photo(chat_id=channel_id, photo=row.tg_id)
-    else:
-        await bot.copy_message(chat_id=channel_id, from_chat_id=sender_id, message_id=row.tg_id)
+
+    await bot.copy_message(chat_id=channel_id, from_chat_id=sender_id, message_id=row.tg_id)
     db_sess.query(Message).filter(Message.id == row.id).delete()
     db_sess.commit()
 
+async def collect_mediagroup(row, db_sess, media_group, caption):
+    if '$' in row.tg_id:
+        caption.append(row.tg_id)
+    else:
+        media_group.attach({"media": row.tg_id, "type": 'photo'})
+    #db_sess.query(Message).filter(Message.id == row.id).delete()
+
+async def send_mediagroup(result_mediagroup, db_sess, media_group, caption):
+    if caption != []:
+        string_media = str(media_group)  # превращаем в str наш экземпляр класса MediaGroup
+        media_group = ast.literal_eval(string_media)  # Превращаем str в list
+        media_group[0]['caption'] = caption[0][1:]
+    channel_id = db_sess.query(Channel).filter(result_mediagroup[0].channel_id == Channel.id).first().tg_id
+    await bot.send_media_group(media=media_group, chat_id=channel_id)
 
 scheduler = AsyncIOScheduler()
 

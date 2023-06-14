@@ -316,9 +316,11 @@ async def not_photo_handler(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         if message.text == '-':
             await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
+           # await message.answer('я насиловал твою мать')
             await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
         else:
             data['message_id'] = message.message_id
+           # await message.answer('иди нахуй тупая тварь')
     await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
     await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
 
@@ -373,6 +375,8 @@ async def forward_channel(message: types.Message, state: FSMContext):
                     x = data['message_id']
                     msg = Message(tg_id=data['message_id'], date=data['pubdate'],
                                   sender_id=sender_id, channel_id=channel_id.id, is_part_mediagroup=True)
+                    db_sess.add(msg)
+                    db_sess.commit()
                 except KeyError:
                     pass
                 db_sess.close()
@@ -384,8 +388,8 @@ async def forward_channel(message: types.Message, state: FSMContext):
                 db_sess.add(msg)
                 db_sess.commit()
                 db_sess.close()
-            await message.answer('Сообщение успешно запланировано на ' + str(data['pubdate']),
-                                 reply_markup=types.ReplyKeyboardRemove())
+                await message.answer('Сообщение успешно запланировано на ' + str(data['pubdate']),
+                                    reply_markup=types.ReplyKeyboardRemove())
         else:
             await message.answer('Вы не добавили этот канал, пожалуйста, сначала добавьте его при помощи /add_channel',
                                  reply_markup=types.ReplyKeyboardRemove())
@@ -404,8 +408,11 @@ async def post_message(row, db_sess):
     channel_id = db_sess.query(Channel).filter(row.channel_id == Channel.id).first().tg_id
     sender_id = db_sess.query(User).filter(row.sender_id == User.id).first().tg_id
     if row.is_part_mediagroup:
-        await bot.send_photo(chat_id=channel_id, photo=row.tg_id)
-
+        try:
+            int(row.tg_id)
+            await bot.copy_message(chat_id=channel_id, from_chat_id=sender_id, message_id=row.tg_id)
+        except ValueError:
+            await bot.send_photo(chat_id=channel_id, photo=row.tg_id)
     else:
         await bot.copy_message(chat_id=channel_id, from_chat_id=sender_id, message_id=row.tg_id)
     db_sess.query(Message).filter(Message.id == row.id).delete()

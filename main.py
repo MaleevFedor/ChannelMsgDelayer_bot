@@ -152,12 +152,14 @@ async def content_plan(message: types.Message, state: FSMContext):
     messages = db_sess.query(Message).filter(Message.channel_id == channel_id).all()
     if len(messages) == 0:
         await message.reply('Для этого канала нет запланированных сообщений')
+        await state.finish()
         return
     for i in sorted(messages, key=lambda x: x.date):
         sender = db_sess.query(User).filter(i.sender_id == User.id).first()
         media_group = False
         if media_group:
             pass
+        #TODO разобраться с медиа группами
         else:
             inline_keyboard = types.InlineKeyboardMarkup()
             inline_keyboard.add(types.InlineKeyboardButton('Изменить сообщение', callback_data='msg-e-' + str(i.id)))

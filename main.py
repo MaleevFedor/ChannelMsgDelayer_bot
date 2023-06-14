@@ -400,10 +400,6 @@ async def check_and_post(bot: Bot):
     db_sess.close()
 
 
-# async for message in get_chat_history(chat_id):
-#   print(message.text)
-
-
 async def post_message(row, db_sess):
     channel_id = db_sess.query(Channel).filter(row.channel_id == Channel.id).first().tg_id
     sender_id = db_sess.query(User).filter(row.sender_id == User.id).first().tg_id

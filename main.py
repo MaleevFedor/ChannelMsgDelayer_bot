@@ -252,13 +252,20 @@ async def start_forwarding(message: types.Message, state: FSMContext):
 @dp.message_handler(content_types=types.ContentType.ANY, state=ForwardingMessages.WaitingForMessage)
 async def forward(message: types.Message, state: FSMContext):
     if message.content_type == 'photo':
-        await state.update_data(file_0=message.photo[-1].file_id, file_counter=0, mediagroup_id=message.photo[-1].file_id, type_media='photo')
-
+        await state.update_data(file_0=message.photo[-1].file_id, file_counter=0, mediagroup_id=message.photo[-1].file_id,
+                                type_media='photo')
         await state.set_state(ForwardingMessages.NextFile.state)
+
     elif message.content_type == 'document':
-        await state.update_data(file_0=message.document.file_id, file_counter=0, mediagroup_id=message.document.file_id, type_media='document')
-
+        await state.update_data(file_0=message.document.file_id, file_counter=0, mediagroup_id=message.document.file_id,
+                                type_media='document')
         await state.set_state(ForwardingMessages.NextFile.state)
+
+    elif message.content_type == 'audio':
+        await state.update_data(file_0=message.audio.file_id, file_counter=0, mediagroup_id=message.audio.file_id,
+                                type_media='audio')
+        await state.set_state(ForwardingMessages.NextFile.state)
+
     else:
         async with state.proxy() as data:
             data['message_id'] = message.message_id
@@ -280,13 +287,24 @@ async def next_photo_handler(message: types.Message, state: FSMContext):
 
 @dp.message_handler(content_types=['document'], state=ForwardingMessages.NextFile)
 async def next_doc_handler(message: types.Message, state: FSMContext):
-    # здесь находимся пока все следуюище сообщения - фото
+    # здесь находимся пока все следуюище сообщения - документы
 
     async with state.proxy() as data:
        # data['mediagroup_id'] = data['photo_0']
         data['file_counter'] += 1
         file_counter = data['file_counter']
         data[f'file_{file_counter}'] = message.document.file_id
+    await state.set_state(ForwardingMessages.NextFile.state)
+
+@dp.message_handler(content_types=['audio'], state=ForwardingMessages.NextFile)
+async def next_audio_handler(message: types.Message, state: FSMContext):
+    # здесь находимся пока все следуюище сообщения - аудио
+
+    async with state.proxy() as data:
+       # data['mediagroup_id'] = data['photo_0']
+        data['file_counter'] += 1
+        file_counter = data['file_counter']
+        data[f'file_{file_counter}'] = message.audio.file_id
     await state.set_state(ForwardingMessages.NextFile.state)
 
 
@@ -357,7 +375,7 @@ async def forward_channel(message: types.Message, state: FSMContext):
                     db_sess.commit()
                 try:
                     x = data['message_id']
-                    msg = Message(tg_id='$'+data['message_id'], date=data['pubdate'],
+                    msg = Message(tg_id='$'+str(data['message_id']), date=data['pubdate'],
                                   sender_id=sender_id, channel_id=channel_id.id, mediagroup_id=data['mediagroup_id'], type_media=data['type_media'])
                     db_sess.add(msg)
                     db_sess.commit()
@@ -426,10 +444,10 @@ async def collect_mediagroup(row, db_sess, media_group, caption):
     #db_sess.query(Message).filter(Message.id == row.id).delete()
 
 async def send_mediagroup(result_mediagroup, db_sess, media_group, caption):
-    if caption != []:
+    if caption:
         string_media = str(media_group)  # превращаем в str наш экземпляр класса MediaGroup
         media_group = ast.literal_eval(string_media)  # Превращаем str в list
-        if caption[1] == 'document':
+        if caption[1] == 'document' or caption[1] == 'audio':
             media_group[-1]['caption'] = caption[0][1:]
         else:
             media_group[0]['caption'] = caption[0][1:]

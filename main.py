@@ -249,50 +249,16 @@ async def start_forwarding(message: types.Message, state: FSMContext):
     await state.set_state(ForwardingMessages.WaitingForMessage.state)
 
 
-# @dp.message_handler(is_media_group=False, state=ForwardingMessages.WaitingForMessage, content_types=types.ContentType.ANY)
-# async def forward(message: types.Message, state: FSMContext):
-#     await message.answer('После альбома напишите подпись к нему. Если подписи нет, то поставьте прочерк "-"')
-#     # try:
-#     #     await message.send_copy(chat_id=-1001945938118)
-#     # except TypeError:
-#     #     await message.reply(text='Данный тип апдейтов не поддерживается '
-#     #                              'методом send_copy')
-#     # return
-#     # msg_id = message.message_id
-#     async with state.proxy() as data:
-#         if message.text == '-':
-#             await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
-#             return
-#         data['message_id'] = message.message_id
-#     await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
-#     await ForwardingMessages.next()
-
-
-# async def forward_photos(message, state: FSMContext):
-#     await photo_handler(message=message)
-#     #async with state.proxy() as data:
-#     #    data['photo_id'] = []
-#     #    file_info_1 = message.photo[-1].file_id
-#     #    data['photo_id'].append(file_info_1)
-#      #
-#      #   try:
-#      #       file_info_1 = message.message_id
-#      #       data['message_id'].append(file_info_1)
-#      #   except Exception as e:
-#      #       print(e)
-#     await ForwardingMessages.next()
-#
-#     await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
-#
-# #async def handle_with_media_group(message, data):
-
-
 @dp.message_handler(content_types=types.ContentType.ANY, state=ForwardingMessages.WaitingForMessage)
 async def forward(message: types.Message, state: FSMContext):
     if message.content_type == 'photo':
-        await state.update_data(photo_0=message.photo[-1].file_id, photo_counter=0)
+        await state.update_data(file_0=message.photo[-1].file_id, file_counter=0, mediagroup_id=message.photo[-1].file_id, type_media='photo')
 
-        await state.set_state(ForwardingMessages.NextPhoto.state)
+        await state.set_state(ForwardingMessages.NextFile.state)
+    elif message.content_type == 'document':
+        await state.update_data(file_0=message.document.file_id, file_counter=0, mediagroup_id=message.document.file_id, type_media='document')
+
+        await state.set_state(ForwardingMessages.NextFile.state)
     else:
         async with state.proxy() as data:
             data['message_id'] = message.message_id
@@ -300,26 +266,38 @@ async def forward(message: types.Message, state: FSMContext):
             await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
 
 
-@dp.message_handler(content_types=['photo'], state=ForwardingMessages.NextPhoto)
+@dp.message_handler(content_types=['photo'], state=ForwardingMessages.NextFile)
 async def next_photo_handler(message: types.Message, state: FSMContext):
     # здесь находимся пока все следуюище сообщения - фото
 
     async with state.proxy() as data:
-        data['mediagroup_id'] = data['photo_0']
-        data['photo_counter'] += 1
-        photo_counter = data['photo_counter']
-        data[f'photo_{photo_counter}'] = message.photo[-1].file_id
-    await state.set_state(ForwardingMessages.NextPhoto.state)
+       # data['mediagroup_id'] = data['photo_0']
+        data['file_counter'] += 1
+        file_counter = data['file_counter']
+        data[f'file_{file_counter}'] = message.photo[-1].file_id
+    await state.set_state(ForwardingMessages.NextFile.state)
 
 
-@dp.message_handler(content_types=['text'], state=ForwardingMessages.NextPhoto)
+@dp.message_handler(content_types=['document'], state=ForwardingMessages.NextFile)
+async def next_doc_handler(message: types.Message, state: FSMContext):
+    # здесь находимся пока все следуюище сообщения - фото
+
+    async with state.proxy() as data:
+       # data['mediagroup_id'] = data['photo_0']
+        data['file_counter'] += 1
+        file_counter = data['file_counter']
+        data[f'file_{file_counter}'] = message.document.file_id
+    await state.set_state(ForwardingMessages.NextFile.state)
+
+
+@dp.message_handler(content_types=['text'], state=ForwardingMessages.NextFile)
 async def not_photo_handler(message: types.Message, state: FSMContext):
     # сюда попадаем если следующее сообщение - не фото
 
     async with state.proxy() as data:
         if message.text == '-':
-            await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
-           # await message.answer('я насиловал твою мать')
+            #await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
+            await message.answer('я насиловал твою мать')
             await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
         else:
             data['message_id'] = message.text
@@ -371,16 +349,16 @@ async def forward_channel(message: types.Message, state: FSMContext):
 
         if channel_id:
             try:
-                x = data['photo_counter']
+                x = data['file_counter']
                 for i in range(x + 1):
-                    msg = Message(tg_id=data[f'photo_{i}'], date=data['pubdate'],
-                                  sender_id=sender_id, channel_id=channel_id.id, mediagroup_id=data['mediagroup_id'])
+                    msg = Message(tg_id=data[f'file_{i}'], date=data['pubdate'],
+                                  sender_id=sender_id, channel_id=channel_id.id, mediagroup_id=data['mediagroup_id'], type_media=data['type_media'])
                     db_sess.add(msg)
                     db_sess.commit()
                 try:
                     x = data['message_id']
                     msg = Message(tg_id='$'+data['message_id'], date=data['pubdate'],
-                                  sender_id=sender_id, channel_id=channel_id.id, mediagroup_id=data['mediagroup_id'])
+                                  sender_id=sender_id, channel_id=channel_id.id, mediagroup_id=data['mediagroup_id'], type_media=data['type_media'])
                     db_sess.add(msg)
                     db_sess.commit()
                 except KeyError:
@@ -390,7 +368,7 @@ async def forward_channel(message: types.Message, state: FSMContext):
                                      reply_markup=types.ReplyKeyboardRemove())
             except KeyError:
                 msg = Message(tg_id=data['message_id'], date=data['pubdate'],
-                              sender_id=sender_id, channel_id=channel_id.id,mediagroup_id=None)
+                              sender_id=sender_id, channel_id=channel_id.id, mediagroup_id=None)
                 db_sess.add(msg)
                 db_sess.commit()
                 db_sess.close()
@@ -411,7 +389,7 @@ async def check_and_post(bot: Bot):
     mediagroups = []
     #await bot.send_message(chat_id=-1001945938118, text=result_mediagroup)
     for row in result_mediagroup:
-        await bot.send_message(chat_id=-1001945938118, text=result_mediagroup)
+        #await bot.send_message(chat_id=-1001945938118, text=result_mediagroup)
         if row.mediagroup_id in mediagroups:
             continue
         else:
@@ -442,15 +420,20 @@ async def post_message(row, db_sess):
 async def collect_mediagroup(row, db_sess, media_group, caption):
     if '$' in row.tg_id:
         caption.append(row.tg_id)
+        caption.append(row.type_media)
     else:
-        media_group.attach({"media": row.tg_id, "type": 'photo'})
+        media_group.attach({"media": row.tg_id, "type": row.type_media})
     #db_sess.query(Message).filter(Message.id == row.id).delete()
 
 async def send_mediagroup(result_mediagroup, db_sess, media_group, caption):
     if caption != []:
         string_media = str(media_group)  # превращаем в str наш экземпляр класса MediaGroup
         media_group = ast.literal_eval(string_media)  # Превращаем str в list
-        media_group[0]['caption'] = caption[0][1:]
+        if caption[1] == 'document':
+            media_group[-1]['caption'] = caption[0][1:]
+        else:
+            media_group[0]['caption'] = caption[0][1:]
+        del caption
     channel_id = db_sess.query(Channel).filter(result_mediagroup[0].channel_id == Channel.id).first().tg_id
     await bot.send_media_group(media=media_group, chat_id=channel_id)
 

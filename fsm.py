@@ -4,7 +4,7 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 class ForwardingMessages(StatesGroup):
     WaitingForMessage = State()
   #  DealWithPhotos = State()
-    NextPhoto = State()
+    NextFile = State()
     WaitingForTimeToSchedule = State()
     WaitingForChannelsToBeChosen = State()
 

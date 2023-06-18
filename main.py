@@ -14,8 +14,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from AlbumHandler import AlbumMiddleware
 from typing import List, Union
 from aiogram.dispatcher.handler import CancelHandler
-from aiogram.dispatcher.middlewares import BaseMiddleware
-import ast
 
 logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
@@ -268,9 +266,9 @@ async def forward_media_group(message: types.Message, state: FSMContext, album: 
         data['caption'] = str(album[0].caption)
         for i, obj in enumerate(album):
             if obj.photo:
-                result = str(obj.photo[-1].file_id) + '-' + str(obj.content_type)
+                result = [str(obj.photo[-1].file_id), str(obj.content_type)]
             else:
-                result = str(obj[obj.content_type].file_id) + '-' + str(obj.content_type)
+                result = [str(obj[obj.content_type].file_id), str(obj.content_type)]
             data[f'msg_{i}'] = result
         data['file_counter'] = len(album)
     await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
@@ -313,14 +311,14 @@ async def forward_channel(message: types.Message, state: FSMContext):
         if channel_id:
             date = data['pubdate']
             if data['media_group']:
-                mediagroup_id = data['msg_0'].split('-')[0]
+                mediagroup_id = data['msg_0'][0]
                 msg = Message(tg_id=data['caption'], date=date,
                               sender_id=sender_id, channel_id=channel_id.id, mediagroup_id=mediagroup_id,
                               type_media='caption')
                 db_sess.add(msg)
                 db_sess.commit()
                 for i in range(data['file_counter']):
-                    msg = data[f'msg_{i}'].split('-')
+                    msg = data[f'msg_{i}']
                     msg = Message(tg_id=msg[0], date=date,
                                   sender_id=sender_id, channel_id=channel_id.id, mediagroup_id=mediagroup_id,
                                   type_media=msg[1])
@@ -345,7 +343,7 @@ async def check_and_post(bot: Bot):
         [i.mediagroup_id for i in db_sess.query(Message).filter(Message.date <= datetime.datetime.now(),
                                                                 Message.mediagroup_id != None).all()])
     not_media_groups = db_sess.query(Message).filter(Message.date <= datetime.datetime.now(),
-                                           Message.mediagroup_id == None).all()
+                                                     Message.mediagroup_id == None).all()
     # await bot.send_message(chat_id=-1001945938118, text=result_mediagroup)
     for row in media_groups_id:
         await post_media_group(row, db_sess, bot)

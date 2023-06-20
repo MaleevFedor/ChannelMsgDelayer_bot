@@ -24,12 +24,11 @@ async def post_media_group(row, db_sess, bot: Bot, channel_id=None):
 async def post_message(row, db_sess, bot: Bot, channel_id=None):
     result_markup = types.InlineKeyboardMarkup()
     if row.reply_markup:
-        reply_buttons = db_sess.query(Keyboard).filter(row.tg_id == Keyboard.markup_id).all()
-    for i in reply_buttons:
-        i = literal_eval(i.content)
-        result_markup.add(i)
+        for i in db_sess.query(Keyboard).filter(row.tg_id == Keyboard.markup_id).all():
+            i = literal_eval(i.content)
+            result_markup.add(i)
     sender_id = db_sess.query(User).filter(row.sender_id == User.id).first().tg_id
     if not channel_id:
         channel_id = db_sess.query(Channel).filter(row.channel_id == Channel.id).first().tg_id
+    print(channel_id, sender_id, row.tg_id, result_markup)
     await bot.copy_message(chat_id=channel_id, from_chat_id=sender_id, message_id=row.tg_id, reply_markup=result_markup)
-

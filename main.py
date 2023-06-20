@@ -1,5 +1,7 @@
 import logging
 from aiogram import Bot, Dispatcher, executor, types
+
+from DbDeleter import *
 from data import db_session
 from data.reply_markup_class import Keyboard
 from data.user_class import User
@@ -144,20 +146,29 @@ async def content_plan(message: types.Message, state: FSMContext):
         await message.reply('Для этого канала нет запланированных сообщений')
         await state.finish()
         return
+    passed_id = set()
     for i in sorted(messages, key=lambda x: x.date):
         sender = db_sess.query(User).filter(i.sender_id == User.id).first()
-        inline_keyboard = types.InlineKeyboardMarkup()
-        inline_keyboard.add(types.InlineKeyboardButton('Изменить сообщение', callback_data='msg-e-' + str(i.id)))
-        inline_keyboard.add(types.InlineKeyboardButton('Удалить сообщение', callback_data='msg-d-' + str(i.id)))
-        inline_keyboard.add(types.InlineKeyboardButton('Опубликовать сообщение сейчас',
-                                                       callback_data='msg-n-' + str(i.id)))
         if i.mediagroup_id:
-            print('asds')
-        # TODO разобраться с медиа группами
+            inline_keyboard = types.InlineKeyboardMarkup()
+            inline_keyboard.add(types.InlineKeyboardButton('Изменить сообщение', callback_data='msg-mg-e-' + str(i.id)))
+            inline_keyboard.add(types.InlineKeyboardButton('Удалить сообщение', callback_data='msg-mg-d-' + str(i.id)))
+            inline_keyboard.add(types.InlineKeyboardButton('Опубликовать сообщение сейчас',
+                                                           callback_data='msg-mg-n-' + str(i.id)))
+            if i.mediagroup_id not in passed_id:
+                await post_media_group(i.mediagroup_id, db_sess, bot, channel_id=message.chat.id)
+                passed_id.add(i.mediagroup_id)
+                await message.answer(f'Сообщение запланировано пользователем: @{sender.username} на время {i.date}',
+                                     reply_markup=inline_keyboard)
         else:
-            await post_message(i, db_sess, bot, channel_id=message.chat.id, reply_markup=inline_keyboard)
-        await message.answer(f'Сообщение запланировано пользователем: @{sender.username} на время {i.date}',
-                             reply_markup=inline_keyboard)
+            inline_keyboard = types.InlineKeyboardMarkup()
+            inline_keyboard.add(types.InlineKeyboardButton('Изменить сообщение', callback_data='msg-m-e-' + str(i.id)))
+            inline_keyboard.add(types.InlineKeyboardButton('Удалить сообщение', callback_data='msg-m-d-' + str(i.id)))
+            inline_keyboard.add(types.InlineKeyboardButton('Опубликовать сообщение сейчас',
+                                                           callback_data='msg-m-n-' + str(i.id)))
+            await post_message(i, db_sess, bot, channel_id=message.chat.id)
+            await message.answer(f'Сообщение запланировано пользователем: @{sender.username} на время {i.date}',
+                                 reply_markup=inline_keyboard)
     await state.finish()
     db_sess.close()
 
@@ -166,26 +177,40 @@ async def content_plan(message: types.Message, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith('msg-'))
 async def process_callback_choose_message_action(callback_query: types.CallbackQuery):
     code = callback_query.data.split('-')
-    if code[1] == 'e':
+    db_sess = db_session.create_session()
+    if code[2] == 'e':
         inline_keyboard = types.InlineKeyboardMarkup()
-        inline_keyboard.add(types.InlineKeyboardButton('Изменить дату отправки', callback_data='e-d-' + code[2]))
-        inline_keyboard.add(types.InlineKeyboardButton('Изменить сообщение', callback_data='e-e-' + code[2]))
+        inline_keyboard.add(types.InlineKeyboardButton('Изменить дату отправки', callback_data='e-d-' + code[2] + '-' +
+                                                       code[3]))
+        if code[1] == 'm':
+            inline_keyboard.add(types.InlineKeyboardButton('Изменить сообщение', callback_data='e-e-' + code[2] + '-' +
+                                                        code[3]))
+        else:
+            pass
+        #TODO добавить изменение медиагрупп
         await bot.send_message(callback_query.from_user.id, 'Что вы хотите изменить?',
                                reply_markup=inline_keyboard)
-    elif code[1] == 'd':
-        db_sess = db_session.create_session()
-        db_sess.query(Message).filter(Message.id == int(code[2])).delete()
-        db_sess.commit()
-        db_sess.close()
+    elif code[2] == 'd':
+        if code[1] == 'm':
+            msg = db_sess.query(Message).filter(Message.id == int(code[3])).first()
+            await delete_message(msg.tg_id, db_sess)
+
+        else:
+            msg = db_sess.query(Message).filter(Message.id == int(code[3])).first()
+            await delete_media_group(msg.mediagroup_id, db_sess)
         await bot.send_message(callback_query.from_user.id, '👌')
         await bot.send_message(callback_query.from_user.id, '/content_plan обновлен')
-    elif code[1] == 'n':
-        db_sess = db_session.create_session()
-        await post_message(db_sess.query(Message).filter(Message.id == int(code[2])).first(), db_sess, bot)
-        db_sess.query(Message).filter(Message.id == int(code[2])).delete()
-        db_sess.commit()
-        db_sess.close()
+    elif code[2] == 'n':
+        if code[1] == 'm':
+            msg = db_sess.query(Message).filter(Message.id == int(code[3])).first()
+            await post_message(msg, db_sess, bot)
+            await delete_message(msg.tg_id, db_sess)
+        else:
+            msg = db_sess.query(Message).filter(Message.id == int(code[3])).first()
+            await post_media_group(msg.mediagroup_id, db_sess, bot)
+            await delete_media_group(msg.mediagroup_id, db_sess)
         await bot.send_message(callback_query.from_user.id, 'Сообщение опубликовано👌')
+    db_sess.close()
 
 
 # edit messages in content plan
@@ -193,7 +218,7 @@ async def process_callback_choose_message_action(callback_query: types.CallbackQ
 async def process_callback_edit_message(callback_query: types.CallbackQuery, state: FSMContext):
     code = callback_query.data.split('-')
     async with state.proxy() as data:
-        data['msg_id'] = code[2]
+        data['msg_id'] = code[3]
     if code[1] == 'e':
         await bot.send_message(callback_query.from_user.id, 'Отправьте измененное сообщение')
         await state.set_state(ContentPlan.msg_edit)
@@ -247,7 +272,7 @@ async def forward_not_media_group(message: types.Message, state: FSMContext):
         data['media_group'] = False
         data['message_id'] = msg_id
         data['reply_markup'] = None
-        if message.reply_markup.inline_keyboard:
+        if message.reply_markup:
             data['reply_markup'] = message.reply_markup.inline_keyboard
     await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
     await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
@@ -324,10 +349,11 @@ async def forward_channel(message: types.Message, state: FSMContext):
                 msg = Message(tg_id=msg_id, date=date, sender_id=sender_id,
                               channel_id=channel_id.id, reply_markup=True)
                 db_sess.add(msg)
-                for i in data['reply_markup']:
-                    i = str(*i)
-                    mrkup = Keyboard(markup_id=msg_id, content=i)
-                    db_sess.add(mrkup)
+                if data['reply_markup']:
+                    for i in data['reply_markup']:
+                        i = str(*i)
+                        mrkup = Keyboard(markup_id=msg_id, content=i)
+                        db_sess.add(mrkup)
                 db_sess.commit()
             await message.answer('Сообщение успешно запланировано на ' + str(date))
         else:
@@ -345,15 +371,12 @@ async def check_and_post(bot: Bot):
                                                                 Message.mediagroup_id != None).all()])
     not_media_groups = db_sess.query(Message).filter(Message.date <= datetime.datetime.now(),
                                                      Message.mediagroup_id == None).all()
-    # await bot.send_message(chat_id=-1001945938118, text=result_mediagroup)
     for row in media_groups_id:
         await post_media_group(row, db_sess, bot)
-        db_sess.query(Message).filter(Message.mediagroup_id == row).delete()
-        db_sess.commit()
+        await delete_media_group(row, db_sess)
     for row in not_media_groups:
         await post_message(row, db_sess, bot)
-        db_sess.query(Message).filter(Message.id == row.id).delete()
-        db_sess.commit()
+        await delete_message(row.tg_id, db_sess)
     db_sess.close()
 
 

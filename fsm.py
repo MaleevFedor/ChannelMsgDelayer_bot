@@ -22,3 +22,7 @@ class ContentPlan(StatesGroup):
     channel_choice = State()
     date_edit = State()
     msg_edit = State()
+
+
+class TimeZoneChange(StatesGroup):
+    Proceed_The_Choice = State()

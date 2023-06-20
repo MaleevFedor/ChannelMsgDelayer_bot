@@ -18,9 +18,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from AlbumHandler import AlbumMiddleware
 from typing import List, Union
 from aiogram.dispatcher.handler import CancelHandler
-import json
-
-
+from timezone_change import *
 logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
 bot = Bot(token=config.TOKEN)
@@ -39,8 +37,11 @@ async def start(message: types.Message):
         user = User(tg_id=id, username=message['from']['username'])
         db_sess.add(user)
         db_sess.commit()
+        timezone = db_sess.query(User).filter(User.tg_id == message.from_user.id).first().timezone
         db_sess.close()
-        await message.answer(f"Добро пожаловать, {message['from']['first_name']}")
+        await message.answer(f"Добро пожаловать, {message['from']['first_name']}.\n"
+                             f"Автоопределён часовой пояс: UTC {timezone}\n"
+                             f"Напишите /help для просмотра списка команд")
 
 
 # adding a new channel
@@ -122,6 +123,10 @@ async def get_list_of_channels(message: types.Message):
 @dp.message_handler(commands='content_plan')
 async def content_plan_channel_choice(message: types.Message, state: FSMContext):
     list_of_channels = await create_list_of_channels(message['from']['id'])
+    if not list_of_channels:
+        await message.answer('Вы не добавили ни одного канала. Сначала добавьте канал при помощи /add_channel')
+        await state.finish()
+        return
     kb = [
         [types.KeyboardButton(text=i) for i in list_of_channels]
     ]
@@ -258,6 +263,11 @@ async def message_edit(message: types.Message, state: FSMContext):
 
 @dp.message_handler(commands='forward')
 async def start_forwarding(message: types.Message, state: FSMContext):
+    list_of_channels = await create_list_of_channels(message['from']['id'])
+    if not list_of_channels:
+        await message.answer('Вы не добавили ни одного канала. Сначала добавьте канал при помощи /add_channel')
+        await state.finish()
+        return
     #   async with state.proxy() as data:
     #       data['sender_id'] = message.from_user.id
     await message.answer('Скиньте сообщение для пересылки')
@@ -327,9 +337,9 @@ async def forward_channel(message: types.Message, state: FSMContext):
         sender_id = db_sess.query(User).filter(User.tg_id == int(message.from_user.id)).first().id
         channel_id = db_sess.query(Channel).filter('@' + Channel.ch_username == message.text,
                                                    sender_id == Channel.user_id).first()
-
+        timezone = db_sess.query(User).filter(User.tg_id == int(message.from_user.id)).first().timezone
         if channel_id:
-            date = data['pubdate']
+            date = data['pubdate'] + datetime.timedelta(hours=timezone) - datetime.timedelta(hours=3)
             if data['media_group']:
                 mediagroup_id = data['msg_0'][0]
                 msg = Message(tg_id=data['caption'], date=date,

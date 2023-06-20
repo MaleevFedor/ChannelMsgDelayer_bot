@@ -1,6 +1,5 @@
 import logging
 from aiogram import Bot, Dispatcher, executor, types
-
 from DbDeleter import *
 from data import db_session
 from data.reply_markup_class import Keyboard
@@ -19,11 +18,61 @@ from AlbumHandler import AlbumMiddleware
 from typing import List, Union
 from aiogram.dispatcher.handler import CancelHandler
 from timezone_change import *
+
+
 logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
 bot = Bot(token=config.TOKEN)
 dp = Dispatcher(bot, storage=storage)
 db_session.global_init("data.db3")
+
+
+# time zone change
+@dp.message_handler(commands='timezone')
+async def timezone_change_starting(message: types.Message):
+    db_sess = db_session.create_session()
+    timezone = db_sess.query(User).filter(User.tg_id == message.from_user.id).first().timezone
+    db_sess.close()
+    await message.answer('Ваш текущий часовой пояс: ' + str(timezone))
+    await message.answer(text='Выберите часть света, в которой вы проживаете, из выпадающего списка', reply_markup=get_keyboard_world())
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith('tmz'))
+async def timezone_change_proceeding(callback: types.CallbackQuery):
+    action = callback.data.split("_")[1]
+    if action == "Europe":
+        await callback.message.answer(text='Выберите свой часовой пояс', reply_markup=get_keyboard_europe())
+    elif action == "Asia":
+        await callback.message.answer(text='Выберите свой часовой пояс', reply_markup=get_keyboard_asia())
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith('UTC'))
+async def timezone_change_proceeding(callback: types.CallbackQuery):
+    action = callback.data.split("_")[1]
+    db_sess = db_session.create_session()
+    db_sess.query(User).filter(User.tg_id == callback.from_user.id).update({'timezone': int(action)})
+    db_sess.commit()
+    db_sess.close()
+    await callback.message.answer('Часовой пояс успешно изменён на UTC'+ action)
+
+#
+# @dp.message_handler(state=TimeZoneChange.Proceed_The_Choice.state, content_types=[types.ContentType.ANY])
+# async def timezone_change_ending(message: types.Message, state: FSMContext):
+
+
+# commands cancellation
+@dp.message_handler(state='*', commands='cancel')
+async def cancel_handler(message: types.Message, state: FSMContext):
+    await message.answer('Действие отменено')
+    await state.finish()
+
+
+# commands list
+@dp.message_handler(commands='help')
+async def commands_list(message: types.Message):
+    await message.answer("/add_channel - добавить канал\n/forward - запланировать пересылку сообщения\n"
+                         "/content_plan - просмотреть список запланированных сообщений\n"
+                         "/cancel - отменить любое действие")
 
 
 # registration

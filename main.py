@@ -117,11 +117,13 @@ async def get_message_from_channel(message: types.Message, state: FSMContext):
                 data['user_id'] = cur_user_id
                 data['tg_id'] = channel_id
                 data['username'] = message['forward_from_chat']['username']
-            await message.answer(f'''Вы добавили канал: @{message['forward_from_chat']['username']}. Для завершения сделайте 
-<code>@ChannelMsgDelayer_bot</code> администратором вашего канала
+            await message.answer(f'''Вы добавили канал: @{message['forward_from_chat']['username']}. Для завершения
+сделайте  <code>@ChannelMsgDelayer_bot</code> администратором вашего канала
 Напишите /check когда сделаете бота администратором
 или /cancel для отмены''', parse_mode='HTML')
             await AddChannels.next()
+            if message['forward_from_chat']['username'] == 'None':
+                data['username'] = None
             db_sess.close()
     except Exception as e:
         if type(e) == TypeError:
@@ -139,13 +141,20 @@ async def administration_check(message: types.Message, state: FSMContext):
                 await message.answer('Дайте боту возможность писать сообщения, и повторите попытку(/check)')
             elif member['status'] == "administrator" \
                     and sender['status'] == "administrator" or sender['status'] == "creator":
-                db_sess = db_session.create_session()
-                user = Channel(user_id=data['user_id'], tg_id=data['tg_id'], ch_username=data['username'])
-                db_sess.add(user)
-                db_sess.commit()
-                db_sess.close()
-                await message.answer('Успех')
-                await state.finish()
+
+                if not data['username']:
+                    await message.answer('Похоже ваш канал закрытый, отправьте как бы вы хотели, чтобы бот называл '
+                                         'ваш канал. Это название нужно только для того, чтобы вам было проще найти '
+                                         'своего бота в списке')
+                    await AddChannels.next()
+                else:
+                    await message.answer('Успех')
+                    db_sess = db_session.create_session()
+                    user = Channel(user_id=data['user_id'], tg_id=data['tg_id'], ch_username=data['username'])
+                    db_sess.add(user)
+                    db_sess.commit()
+                    db_sess.close()
+                    await state.finish()
             else:
                 await message.answer('Вы не являетесь администратором этого канала')
                 await state.finish()
@@ -153,6 +162,17 @@ async def administration_check(message: types.Message, state: FSMContext):
         except Exception as e:
             await message.answer(f'Что-то пошло не так, ошибка: "{e}"')
             await state.finish()
+
+
+@dp.message_handler(state=AddChannels.Nickname.state)
+async def close_channel_nickname(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        db_sess = db_session.create_session()
+        user = Channel(user_id=data['user_id'], tg_id=data['tg_id'], ch_username=message.text)
+        db_sess.add(user)
+        db_sess.commit()
+        db_sess.close()
+        await message.answer('Канал{message.text} успешно добавлен')
 
 
 # list of channels

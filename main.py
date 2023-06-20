@@ -1,9 +1,11 @@
 import logging
 from aiogram import Bot, Dispatcher, executor, types
 from data import db_session
+from data.reply_markup_class import Keyboard
 from data.user_class import User
 from data.channel_class import Channel
 from data.message_class import Message
+from ChannelsList import create_list_of_channels
 import config
 from aiogram.dispatcher import FSMContext
 from fsm import *
@@ -14,25 +16,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from AlbumHandler import AlbumMiddleware
 from typing import List, Union
 from aiogram.dispatcher.handler import CancelHandler
+import json
+
 
 logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
 bot = Bot(token=config.TOKEN)
 dp = Dispatcher(bot, storage=storage)
 db_session.global_init("data.db3")
-
-
-async def create_list_of_channels(user_id):
-    db_sess = db_session.create_session()
-    db_id = db_sess.query(User).filter(User.tg_id == user_id).first().id
-    list_of_channels = db_sess.query(Channel).filter(Channel.user_id == db_id).all()
-    db_sess.close()
-    result = []
-    for i in list_of_channels:
-        username = i.ch_username
-        if username:
-            result.append(f'@{username}')
-    return result
 
 
 # registration
@@ -155,17 +146,18 @@ async def content_plan(message: types.Message, state: FSMContext):
         return
     for i in sorted(messages, key=lambda x: x.date):
         sender = db_sess.query(User).filter(i.sender_id == User.id).first()
+        inline_keyboard = types.InlineKeyboardMarkup()
+        inline_keyboard.add(types.InlineKeyboardButton('Изменить сообщение', callback_data='msg-e-' + str(i.id)))
+        inline_keyboard.add(types.InlineKeyboardButton('Удалить сообщение', callback_data='msg-d-' + str(i.id)))
+        inline_keyboard.add(types.InlineKeyboardButton('Опубликовать сообщение сейчас',
+                                                       callback_data='msg-n-' + str(i.id)))
         if i.mediagroup_id:
             print('asds')
         # TODO разобраться с медиа группами
         else:
-            inline_keyboard = types.InlineKeyboardMarkup()
-            inline_keyboard.add(types.InlineKeyboardButton('Изменить сообщение', callback_data='msg-e-' + str(i.id)))
-            inline_keyboard.add(types.InlineKeyboardButton('Удалить сообщение', callback_data='msg-d-' + str(i.id)))
-            inline_keyboard.add(types.InlineKeyboardButton('Опубликовать сообщение сейчас',
-                                                           callback_data='msg-n-' + str(i.id)))
             await post_message(i, db_sess, bot, channel_id=message.chat.id, reply_markup=inline_keyboard)
-        await message.answer(f'Сообщение запланировано пользователем: @{sender.username} на время {i.date}')
+        await message.answer(f'Сообщение запланировано пользователем: @{sender.username} на время {i.date}',
+                             reply_markup=inline_keyboard)
     await state.finish()
     db_sess.close()
 
@@ -254,6 +246,9 @@ async def forward_not_media_group(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         data['media_group'] = False
         data['message_id'] = msg_id
+        data['reply_markup'] = None
+        if message.reply_markup.inline_keyboard:
+            data['reply_markup'] = message.reply_markup.inline_keyboard
     await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
     await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
 
@@ -263,7 +258,7 @@ async def forward_not_media_group(message: types.Message, state: FSMContext):
 async def forward_media_group(message: types.Message, state: FSMContext, album: List[types.Message]):
     async with state.proxy() as data:
         data['media_group'] = True
-        data['caption'] = str(album[0].caption)
+        data['caption'] = album[0].caption
         for i, obj in enumerate(album):
             if obj.photo:
                 result = [str(obj.photo[-1].file_id), str(obj.content_type)]
@@ -325,8 +320,14 @@ async def forward_channel(message: types.Message, state: FSMContext):
                     db_sess.add(msg)
                     db_sess.commit()
             else:
-                msg = Message(tg_id=data['message_id'], date=date, sender_id=sender_id, channel_id=channel_id.id)
+                msg_id = data['message_id']
+                msg = Message(tg_id=msg_id, date=date, sender_id=sender_id,
+                              channel_id=channel_id.id, reply_markup=True)
                 db_sess.add(msg)
+                for i in data['reply_markup']:
+                    i = str(*i)
+                    mrkup = Keyboard(markup_id=msg_id, content=i)
+                    db_sess.add(mrkup)
                 db_sess.commit()
             await message.answer('Сообщение успешно запланировано на ' + str(date))
         else:

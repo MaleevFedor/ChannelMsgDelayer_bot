@@ -1,11 +1,9 @@
 import logging
 from aiogram import Bot, Dispatcher, executor, types
 from data import db_session
-from data.reply_markup_class import Keyboard
 from data.user_class import User
 from data.channel_class import Channel
 from data.message_class import Message
-from ChannelsList import create_list_of_channels
 import config
 from aiogram.dispatcher import FSMContext
 from fsm import *
@@ -16,14 +14,75 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from AlbumHandler import AlbumMiddleware
 from typing import List, Union
 from aiogram.dispatcher.handler import CancelHandler
-import json
-
-
+from timezone_change import *
 logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
 bot = Bot(token=config.TOKEN)
 dp = Dispatcher(bot, storage=storage)
 db_session.global_init("data.db3")
+
+
+
+
+async def create_list_of_channels(user_id):
+    db_sess = db_session.create_session()
+    db_id = db_sess.query(User).filter(User.tg_id == user_id).first().id
+    list_of_channels = db_sess.query(Channel).filter(Channel.user_id == db_id).all()
+    db_sess.close()
+    result = []
+    for i in list_of_channels:
+        username = i.ch_username
+        if username:
+            result.append(f'@{username}')
+    return result
+
+
+# time zone change
+@dp.message_handler(commands='timezone')
+async def timezone_change_starting(message: types.Message):
+    db_sess = db_session.create_session()
+    timezone = db_sess.query(User).filter(User.tg_id == message.from_user.id).first().timezone
+    db_sess.close()
+    await message.answer('Ваш текущий часовой пояс: '+ str(timezone))
+    await message.answer(text='Выберите часть света, в которой вы проживаете, из выпадающего списка', reply_markup=get_keyboard_world())
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith('tmz'))
+async def timezone_change_proceeding(callback: types.CallbackQuery):
+    action = callback.data.split("_")[1]
+    if action == "Europe":
+        await callback.message.answer(text='Выберите свой часовой пояс', reply_markup=get_keyboard_europe())
+    elif action == "Asia":
+        await callback.message.answer(text='Выберите свой часовой пояс', reply_markup=get_keyboard_asia())
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith('UTC'))
+async def timezone_change_proceeding(callback: types.CallbackQuery):
+    action = callback.data.split("_")[1]
+    db_sess = db_session.create_session()
+    db_sess.query(User).filter(User.tg_id == callback.from_user.id).update({'timezone': int(action)})
+    db_sess.commit()
+    db_sess.close()
+    await callback.message.answer('Часовой пояс успешно изменён на UTC'+ action)
+
+#
+# @dp.message_handler(state=TimeZoneChange.Proceed_The_Choice.state, content_types=[types.ContentType.ANY])
+# async def timezone_change_ending(message: types.Message, state: FSMContext):
+
+
+# commands cancellation
+@dp.message_handler(state='*', commands='cancel')
+async def cancel_handler(message: types.Message, state: FSMContext):
+    await message.answer('Действие отменено')
+    await state.finish()
+
+
+# commands list
+@dp.message_handler(commands='help')
+async def commands_list(message: types.Message):
+    await message.answer("/add_channel - добавить канал\n/forward - запланировать пересылку сообщения\n"
+                         "/content_plan - просмотреть список запланированных сообщений\n"
+                         "/cancel - отменить любое действие")
 
 
 # registration
@@ -37,8 +96,11 @@ async def start(message: types.Message):
         user = User(tg_id=id, username=message['from']['username'])
         db_sess.add(user)
         db_sess.commit()
+        timezone = db_sess.query(User).filter(User.tg_id == message.from_user.id).first().timezone
         db_sess.close()
-        await message.answer(f"Добро пожаловать, {message['from']['first_name']}")
+        await message.answer(f"Добро пожаловать, {message['from']['first_name']}.\n"
+                             f"Автоопределён часовой пояс: UTC {timezone}\n"
+                             f"Напишите /help для просмотра списка команд")
 
 
 # adding a new channel
@@ -52,6 +114,9 @@ async def add_channel(message: types.Message, state: FSMContext):
 # adding a new channel
 @dp.message_handler(state=AddChannels.WaitingForMessage.state, content_types=[types.ContentType.ANY])
 async def get_message_from_channel(message: types.Message, state: FSMContext):
+    if message.text == 'idi naxui':
+        await state.finish()
+        return
     db_sess = db_session.create_session()
     try:
         channel_id = message['forward_from_chat']['id']
@@ -119,7 +184,12 @@ async def get_list_of_channels(message: types.Message):
 # content plan
 @dp.message_handler(commands='content_plan')
 async def content_plan_channel_choice(message: types.Message, state: FSMContext):
+
     list_of_channels = await create_list_of_channels(message['from']['id'])
+    if not list_of_channels:
+        await message.answer('Вы не добавили ни одного канала. Сначала добавьте канал при помощи /add_channel')
+        await state.finish()
+        return
     kb = [
         [types.KeyboardButton(text=i) for i in list_of_channels]
     ]
@@ -146,18 +216,17 @@ async def content_plan(message: types.Message, state: FSMContext):
         return
     for i in sorted(messages, key=lambda x: x.date):
         sender = db_sess.query(User).filter(i.sender_id == User.id).first()
-        inline_keyboard = types.InlineKeyboardMarkup()
-        inline_keyboard.add(types.InlineKeyboardButton('Изменить сообщение', callback_data='msg-e-' + str(i.id)))
-        inline_keyboard.add(types.InlineKeyboardButton('Удалить сообщение', callback_data='msg-d-' + str(i.id)))
-        inline_keyboard.add(types.InlineKeyboardButton('Опубликовать сообщение сейчас',
-                                                       callback_data='msg-n-' + str(i.id)))
         if i.mediagroup_id:
             print('asds')
         # TODO разобраться с медиа группами
         else:
+            inline_keyboard = types.InlineKeyboardMarkup()
+            inline_keyboard.add(types.InlineKeyboardButton('Изменить сообщение', callback_data='msg-e-' + str(i.id)))
+            inline_keyboard.add(types.InlineKeyboardButton('Удалить сообщение', callback_data='msg-d-' + str(i.id)))
+            inline_keyboard.add(types.InlineKeyboardButton('Опубликовать сообщение сейчас',
+                                                           callback_data='msg-n-' + str(i.id)))
             await post_message(i, db_sess, bot, channel_id=message.chat.id, reply_markup=inline_keyboard)
-        await message.answer(f'Сообщение запланировано пользователем: @{sender.username} на время {i.date}',
-                             reply_markup=inline_keyboard)
+        await message.answer(f'Сообщение запланировано пользователем: @{sender.username} на время {i.date}')
     await state.finish()
     db_sess.close()
 
@@ -233,6 +302,11 @@ async def message_edit(message: types.Message, state: FSMContext):
 
 @dp.message_handler(commands='forward')
 async def start_forwarding(message: types.Message, state: FSMContext):
+    list_of_channels = await create_list_of_channels(message['from']['id'])
+    if not list_of_channels:
+        await message.answer('Вы не добавили ни одного канала. Сначала добавьте канал при помощи /add_channel')
+        await state.finish()
+        return
     #   async with state.proxy() as data:
     #       data['sender_id'] = message.from_user.id
     await message.answer('Скиньте сообщение для пересылки')
@@ -246,9 +320,6 @@ async def forward_not_media_group(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         data['media_group'] = False
         data['message_id'] = msg_id
-        data['reply_markup'] = None
-        if message.reply_markup.inline_keyboard:
-            data['reply_markup'] = message.reply_markup.inline_keyboard
     await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
     await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
 
@@ -258,7 +329,7 @@ async def forward_not_media_group(message: types.Message, state: FSMContext):
 async def forward_media_group(message: types.Message, state: FSMContext, album: List[types.Message]):
     async with state.proxy() as data:
         data['media_group'] = True
-        data['caption'] = album[0].caption
+        data['caption'] = str(album[0].caption)
         for i, obj in enumerate(album):
             if obj.photo:
                 result = [str(obj.photo[-1].file_id), str(obj.content_type)]
@@ -302,9 +373,9 @@ async def forward_channel(message: types.Message, state: FSMContext):
         sender_id = db_sess.query(User).filter(User.tg_id == int(message.from_user.id)).first().id
         channel_id = db_sess.query(Channel).filter('@' + Channel.ch_username == message.text,
                                                    sender_id == Channel.user_id).first()
-
+        timezone = db_sess.query(User).filter(User.tg_id == int(message.from_user.id)).first().timezone
         if channel_id:
-            date = data['pubdate']
+            date = data['pubdate'] + datetime.timedelta(hours=timezone) - datetime.timedelta(hours=3)
             if data['media_group']:
                 mediagroup_id = data['msg_0'][0]
                 msg = Message(tg_id=data['caption'], date=date,
@@ -320,16 +391,10 @@ async def forward_channel(message: types.Message, state: FSMContext):
                     db_sess.add(msg)
                     db_sess.commit()
             else:
-                msg_id = data['message_id']
-                msg = Message(tg_id=msg_id, date=date, sender_id=sender_id,
-                              channel_id=channel_id.id, reply_markup=True)
+                msg = Message(tg_id=data['message_id'], date=date, sender_id=sender_id, channel_id=channel_id.id)
                 db_sess.add(msg)
-                for i in data['reply_markup']:
-                    i = str(*i)
-                    mrkup = Keyboard(markup_id=msg_id, content=i)
-                    db_sess.add(mrkup)
                 db_sess.commit()
-            await message.answer('Сообщение успешно запланировано на ' + str(date))
+            await message.answer('Сообщение успешно запланировано на ' + str(data['pubdate']))
         else:
             await message.answer('Вы не добавили этот канал, пожалуйста, сначала добавьте его при помощи /add_channel',
                                  reply_markup=types.ReplyKeyboardRemove())
@@ -363,6 +428,6 @@ scheduler.add_job(check_and_post, trigger='interval', seconds=5, args=(bot,))
 
 scheduler.start()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     dp.middleware.setup(AlbumMiddleware())
     executor.start_polling(dp, skip_updates=False)

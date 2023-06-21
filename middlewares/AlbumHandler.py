@@ -1,6 +1,6 @@
 import asyncio
-from typing import List, Union
-from aiogram import Bot, Dispatcher, executor, types
+from typing import Union
+from aiogram import types
 from aiogram.dispatcher.handler import CancelHandler
 from aiogram.dispatcher.middlewares import BaseMiddleware
 

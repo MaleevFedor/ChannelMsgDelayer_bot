@@ -1,5 +1,5 @@
-from data.message_class import Message
-from data.reply_markup_class import Keyboard
+from .message_class import Message
+from .reply_markup_class import Keyboard
 
 
 async def delete_media_group(id, db_sess):

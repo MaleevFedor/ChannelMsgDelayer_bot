@@ -1,9 +1,10 @@
 from aiogram import types
 
+
 def get_keyboard_world():
     buttons = [
-            [types.InlineKeyboardButton(text="Европа", callback_data="tmz_Europe")],
-            [types.InlineKeyboardButton(text="Азиатская часть России и СНГ", callback_data="tmz_Asia")]
+        [types.InlineKeyboardButton(text="Европа", callback_data="tmz_Europe")],
+        [types.InlineKeyboardButton(text="Азиатская часть России и СНГ", callback_data="tmz_Asia")]
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
@@ -35,4 +36,3 @@ def get_keyboard_asia():
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
-

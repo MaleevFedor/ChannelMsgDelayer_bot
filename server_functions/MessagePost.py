@@ -9,7 +9,8 @@ from ast import literal_eval
 
 async def post_media_group(row, db_sess, bot: Bot, channel_id=None):
     media_group = types.MediaGroup()
-    media_group_parts = db_sess.query(Message).filter(Message.mediagroup_id == row, Message.type_media != 'caption').all()
+    media_group_parts = db_sess.query(Message).filter(Message.mediagroup_id == row,
+                                                      Message.type_media != 'caption').all()
     caption = db_sess.query(Message).filter(Message.mediagroup_id == row, Message.type_media == 'caption').first().tg_id
     if caption:
         caption = str(caption)
@@ -30,5 +31,4 @@ async def post_message(row, db_sess, bot: Bot, channel_id=None):
     sender_id = db_sess.query(User).filter(row.sender_id == User.id).first().tg_id
     if not channel_id:
         channel_id = db_sess.query(Channel).filter(row.channel_id == Channel.id).first().tg_id
-    print(channel_id, sender_id, row.tg_id, result_markup)
     await bot.copy_message(chat_id=channel_id, from_chat_id=sender_id, message_id=row.tg_id, reply_markup=result_markup)

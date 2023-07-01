@@ -13,3 +13,5 @@ class Message(SqlAlchemyBase):
     reply_markup = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
     mediagroup_id = sqlalchemy.Column(sqlalchemy.Integer)
     type_media = sqlalchemy.Column(sqlalchemy.String)
+    is_sent = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
+    #id_on_post = sqlalchemy.Column(sqlalchemy.String)

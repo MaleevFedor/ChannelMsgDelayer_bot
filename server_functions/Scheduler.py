@@ -13,7 +13,8 @@ async def check_and_post(bot: Bot):
         [i.mediagroup_id for i in db_sess.query(Message).filter(Message.date <= datetime.datetime.now(),
                                                                 Message.mediagroup_id != None).all()])
     not_media_groups = db_sess.query(Message).filter(Message.date <= datetime.datetime.now(),
-                                                     Message.mediagroup_id == None).all()
+                                                     Message.mediagroup_id == None,
+                                                     Message.is_sent == False).all()
     for row in media_groups_id:
         await post_media_group(row, db_sess, bot)
         await delete_media_group(row, db_sess)

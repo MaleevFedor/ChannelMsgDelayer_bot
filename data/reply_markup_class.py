@@ -7,3 +7,6 @@ class Keyboard(SqlAlchemyBase):
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
     markup_id = sqlalchemy.Column(sqlalchemy.String)
     content = sqlalchemy.Column(sqlalchemy.String)
+    content_text = sqlalchemy.Column(sqlalchemy.String)
+    content_for_all = sqlalchemy.Column(sqlalchemy.String)
+    content_for_subs = sqlalchemy.Column(sqlalchemy.String)

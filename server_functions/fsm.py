@@ -3,7 +3,10 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 
 class ForwardingMessages(StatesGroup):
     WaitingForMessage = State()
-    NextFile = State()
+    ProceedingCustomization = State()
+#    HiddenContinuationText = State()
+    HiddenContinuationForAll = State()
+    HiddenContinuationForSubs = State()
     WaitingForTimeToSchedule = State()
     WaitingForChannelsToBeChosen = State()
 

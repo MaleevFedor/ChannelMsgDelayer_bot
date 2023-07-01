@@ -25,10 +25,17 @@ async def post_media_group(row, db_sess, bot: Bot, channel_id=None):
 async def post_message(row, db_sess, bot: Bot, channel_id=None):
     result_markup = types.InlineKeyboardMarkup()
     if row.reply_markup:
-        for i in db_sess.query(Keyboard).filter(row.tg_id == Keyboard.markup_id).all():
-            i = literal_eval(i.content)
-            result_markup.add(i)
+        mrkp = db_sess.query(Keyboard).filter(row.tg_id == Keyboard.markup_id).all()
+        for x in range(len(mrkp)):
+            i = mrkp[x]
+            if i.content_text:
+                button = types.InlineKeyboardButton(text=i.content_text, callback_data='hidden_'+row.tg_id+'_'+str(x))
+                result_markup.add(button)
+            else:
+                i = literal_eval(i.content)
+                result_markup.add(i)
     sender_id = db_sess.query(User).filter(row.sender_id == User.id).first().tg_id
     if not channel_id:
         channel_id = db_sess.query(Channel).filter(row.channel_id == Channel.id).first().tg_id
-    await bot.copy_message(chat_id=channel_id, from_chat_id=sender_id, message_id=row.tg_id, reply_markup=result_markup)
+    msg_copy = await bot.copy_message(chat_id=channel_id, from_chat_id=sender_id, message_id=row.tg_id, reply_markup=result_markup)
+#    db_sess.query(Message).filter(Message.tg_id == row.tg_id).update({'id_on_post ': msg_copy.message_id})

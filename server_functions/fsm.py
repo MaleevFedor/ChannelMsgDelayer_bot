@@ -5,6 +5,7 @@ class ForwardingMessages(StatesGroup):
     WaitingForMessage = State()
     ProceedingCustomization = State()
 #    HiddenContinuationText = State()
+    HyperLink = State()
     HiddenContinuationForAll = State()
     HiddenContinuationForSubs = State()
     WaitingForTimeToSchedule = State()

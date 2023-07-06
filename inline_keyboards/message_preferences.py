@@ -19,8 +19,8 @@ def get_keyboard_preferences(restrict_comms, pin, share, reply_post):
     else:
         reply = 'Ответный пост: выкл'
     buttons = [
-        [types.InlineKeyboardButton(text="Изменить текст", callback_data="prf_edit")],
-        [types.InlineKeyboardButton(text="Изменить фото", callback_data="prf_edit_photo")],
+        [types.InlineKeyboardButton(text="Изменить сообщение", callback_data="prf_edit")],
+       # [types.InlineKeyboardButton(text="Изменить фото", callback_data="prf_edit_photo")],
         [types.InlineKeyboardButton(text="Реакции", callback_data="prf_reactions"),
          types.InlineKeyboardButton(text="URL-кнопки", callback_data="prf_buttons")],
         [types.InlineKeyboardButton(text="Скрытое продолжение", callback_data="prf_continuation")],

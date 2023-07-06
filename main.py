@@ -20,7 +20,9 @@ buttons = [
 keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
 # @dp.message_handler(content_types=[types.ContentType.ANY])
 # async def echo(message: types.Message):
-#     await bot.send_message(chat_id=-1001945938118, text='хуй', reply_markup=keyboard)
+#     snus = await bot.copy_message(message_id=1000,chat_id=1186221701, from_chat_id=1186221701)
+#
+#     await message.answer(snus.text)
 #     #user_channel_status = await bot.get_chat_member(chat_id='@testforbot_makar', user_id=6059543486)
 #     #await message.answer(user_channel_status['status'])
 

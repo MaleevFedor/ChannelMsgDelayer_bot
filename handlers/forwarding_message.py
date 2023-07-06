@@ -22,6 +22,7 @@ async def start_forwarding(message: types.Message, state: FSMContext):
     #   async with state.proxy() as data:
     #       data['sender_id'] = message.from_user.id
     await message.answer('Скиньте сообщение для пересылки')
+    #await message.answer(sex)
     await state.set_state(ForwardingMessages.WaitingForMessage.state)
 
 
@@ -40,11 +41,13 @@ async def forward_not_media_group(message: types.Message, state: FSMContext):
         data['message_id'] = msg_id
         data['reply_markup'] = None
         data['message'] = message
+        data['link'] = None
         if message.reply_markup:
             data['reply_markup'] = message.reply_markup.inline_keyboard
         ##     if not data['media_group']:
 
         #            await bot.copy_message(data['message_id'], chat_id=message.from_user.id)
+       # await message.answer(message)
         data['menu_msg'] = await message.answer("Выберите нужные настройки", reply_markup=get_keyboard_preferences(
             data['restrict_comms'], data['pin'], data['share'], data['reply_post']))
     #await state.set_state(ForwardingMessages.CustomizingMessage.state)
@@ -73,27 +76,41 @@ async def forward_media_group(message: types.Message, state: FSMContext, album: 
 async def proceeding_customization(callback: types.CallbackQuery, state: FSMContext):
     action = callback.data.split("_")[1]
     async with state.proxy() as data:
+    #   await bot.send_message(text=callback, chat_id=1186221701)
         data['action'] = action
         if action == 'edit':
-            await callback.answer('Введите текст')
-        elif action == 'edit_photo':
-            await callback.answer('Отправьте фото')
+            await bot.send_message(text='Пришлите новое сообщение', chat_id=callback.from_user.id)
+            #await callback.answer('Введите текст')
+       # elif action == 'edit_photo':
+       #     await bot.send_message(text='Отправьте фото', chat_id=callback.from_user.id)
+       #     #await callback.answer('Отправьте фото')
         elif action == 'reactions':
-            await callback.answer("Разраб долбаеб и это ещё не сделал, сорян")
+            await bot.send_message(text="Разраб долбаеб и это ещё не сделал, сорян", chat_id=callback.from_user.id)
+            #await callback.answer("Разраб долбаеб и это ещё не сделал, сорян")
         elif action == 'continuation':
-            await callback.answer('Отправьте название кнопки')
+            #await bot.send_message(text=data['menu_msg'].chat.id, chat_id=callback.from_user.id)
+            await bot.send_message(text='Отправьте название кнопки', chat_id=callback.from_user.id)
+            #await callback.answer('Отправьте название кнопки')
+        elif action == 'link':
+            if not data['message'].text and not data['message'].caption:
+                await callback.answer("Нельзя добавить гиперссылку к сообщению без текста")
+                return
+            #await bot.send_message(text=data['menu_msg'].chat.id, chat_id=callback.from_user.id)
+            await bot.send_message(text='Отправьте ссылку', chat_id=callback.from_user.id)
         elif action == 'end':
-            await callback.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
+            await bot.send_message(text="Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm", chat_id=callback.from_user.id)
+            #await callback.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
             await state.set_state(ForwardingMessages.WaitingForTimeToSchedule.state)
             return
             #bot.answer_callback_query(callback_query_id=callback.id, text="Неверно, Верный ответ...", show_alert=True)
+        await bot.delete_message(message_id=data['menu_msg'].message_id, chat_id=data['menu_msg'].chat.id)
         await state.set_state(ForwardingMessages.ProceedingCustomization.state)
 
 
 async def customization(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         if data['action'] == 'edit':
-            data['message']['text'] = message.text
+            data['message_id'] = message.message_id
         elif data['action'] == 'edit_photo':
             data['message']['photo'] = message.photo
         elif data['action'] == 'reactions':
@@ -104,9 +121,51 @@ async def customization(message: types.Message, state: FSMContext):
             await message.answer('Введите текст только для подписчиков')
             await state.set_state(ForwardingMessages.HiddenContinuationForAll.state)
 
+        elif data['action'] == 'link':
 
-        elif data['action'] == 'buttons':
-            pass
+            data['link'] = message.text
+            await message.answer('Введите два номера символов в сообщении через пробел('
+                                 'первый символ - начало гиперссылки, второй символ - конец)')
+            await state.set_state(ForwardingMessages.HyperLink.state)
+
+
+async def hyperlink(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        if data['message'].text:
+            msg_text = data['message'].text
+            data['type_of_string'] = 'text'
+        else:
+            msg_text = data['message'].caption
+            data['type_of_string'] = 'caption'
+
+        try:
+            if int(message.text.split(' ')[0]) > len(msg_text) or int(message.text.split(' ')[0]) < 0:
+                await message.answer('Символа с таким номером не существует в сообщении. Попробуйте ещё раз')
+                await message.answer(data['message'].text)
+                await message.answer(len(data['message'].text))
+                await message.answer(message.text.split(' '))
+                await state.set_state(ForwardingMessages.HyperLink.state)
+                return
+            elif int(message.text.split(' ')[1]) > len(msg_text) or int(message.text.split(' ')[1]) < 0:
+                await message.answer('Символа с таким номером не существует в сообщении. Попробуйте ещё раз')
+                await state.set_state(ForwardingMessages.HyperLink.state)
+                return
+            elif int(message.text.split(' ')[1]) < int(message.text.split(' ')[0]):
+                await message.answer('Номер первого символа не может быть больше номера второго. Попробуйте ещё раз')
+                await state.set_state(ForwardingMessages.HyperLink.state)
+                return
+        except ValueError:
+            await message.answer('Неверно указана последовательность. Попробуйте ещё раз')
+            await state.set_state(ForwardingMessages.HyperLink.state)
+            return
+        data['link_start_and_finish'] = str(int(message.text.split(' ')[0])) + ' ' + str(int(message.text.split(' ')[1]) + 1)
+        #data['link_start_and_finish'] = message.text
+        await message.answer('Гиперссылка успешно добавлена')
+        # await bot.send_photo(photo=data['message'].photo, caption=data['message'].text, parse_mode='HTML',
+        #                      chat_id=data['message'].ч.id)
+        #wait message.answer(text=data['message'].text, parse_mode='HTML')
+        data['menu_msg'] = await message.answer("Выберите нужные настройки", reply_markup=get_keyboard_preferences(
+            data['restrict_comms'], data['pin'], data['share'], data['reply_post']))
 
 
 async def continuation_for_all(message: types.Message, state: FSMContext):
@@ -119,13 +178,16 @@ async def continuation_for_all(message: types.Message, state: FSMContext):
 async def continuation_for_subs(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         data['hidden_continuation_all'].append(message.text)
-        buttons = [
-            [types.InlineKeyboardButton(text="Назад", callback_data="hidden_back")],
-            [types.InlineKeyboardButton(text="Ещё одно", callback_data="hidden_proceed")]
-        ]
-        keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-        await message.answer('Скрытое продолжение успешно добавлено.'
-                             ' Добавим ещё одно или вернёмся к остальным настройкам?', reply_markup=keyboard)
+        # buttons = [
+        #     [types.InlineKeyboardButton(text="Назад", callback_data="hidden_back")],
+        #     [types.InlineKeyboardButton(text="Ещё одно", callback_data="hidden_proceed")]
+        # ]
+        # keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+        # data['menu_msg']
+
+        # bot.delete_message(data['menu_msg'].message_id, chat_id=data['menu_msg'].from_user.id)
+        data['menu_msg'] = await message.answer('Скрытое продолжение успешно добавлено.', reply_markup=get_keyboard_preferences(
+            data['restrict_comms'], data['pin'], data['share'], data['reply_post']))
 
 
 async def continuation_choice(callback: types.CallbackQuery, state: FSMContext):
@@ -141,6 +203,7 @@ async def continuation_choice(callback: types.CallbackQuery, state: FSMContext):
 
 async def forward_time(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
+        await bot.delete_message(message_id=data['menu_msg'].message_id, chat_id=data['menu_msg'].chat.id)
         try:
             data['pubdate'] = datetime.datetime.strptime(message.text, '%Y-%m-%d-%H:%M')
         except:
@@ -205,6 +268,24 @@ async def forward_channel(message: types.Message, state: FSMContext):
                                          content_for_all=data['hidden_continuation_all'][i],
                                          content_for_subs=data['hidden_continuation_subs'][i])
                         db_sess.add(mrkup)
+                if data['link']:
+                    startlink = int(data['link_start_and_finish'].split(' ')[0]) - 1
+                    finishlink = int(data['link_start_and_finish'].split(' ')[1]) - 1
+                    if data['type_of_string'] == 'text':
+                        startmessage = data['message'].text[:startlink]
+                        finishmessage = data['message'].text[finishlink:]
+                        middlemessage = data['message'].text[startlink:finishlink]
+                    else:
+                        startmessage = data['message'].caption[:startlink]
+                        finishmessage = data['message'].caption[finishlink:]
+                        middlemessage = data['message'].caption[startlink:finishlink]
+                    mlink = data['link']
+                    link = f'<a href="{mlink}">{middlemessage}</a>'
+                    mrkup = Keyboard(markup_id=msg_id,
+                                     content_url_text=startmessage+link+finishmessage,
+                                     type_of_string=data['type_of_string'])
+                    db_sess.add(mrkup)
+
                 db_sess.commit()
             await message.answer('Сообщение успешно запланировано на ' + str(date))
         else:
@@ -221,12 +302,12 @@ def setup(dp: Dispatcher):
                                 state=ForwardingMessages.WaitingForMessage)
     dp.register_message_handler(forward_media_group, is_media_group=True, content_types=types.ContentType.ANY,
                                 state=ForwardingMessages.WaitingForMessage)
-#    dp.register_message_handler(customize_the_message, state=ForwardingMessages.CustomizingMessage,
-#                                content_types=types.ContentType.TEXT)
+    dp.register_message_handler(hyperlink, state=ForwardingMessages.HyperLink,
+                                content_types=types.ContentType.TEXT)
     dp.register_callback_query_handler(proceeding_customization, lambda c: c.data and c.data.startswith('prf'), state='*')
 
     dp.register_message_handler(customization, state=ForwardingMessages.ProceedingCustomization,
-                                content_types=types.ContentType.TEXT)
+                                content_types=types.ContentType.ANY)
     dp.register_message_handler(continuation_for_all, state=ForwardingMessages.HiddenContinuationForAll,
                                 content_types=types.ContentType.TEXT)
     dp.register_message_handler(continuation_for_subs, state=ForwardingMessages.HiddenContinuationForSubs,

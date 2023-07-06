@@ -6,7 +6,7 @@ from DispatcherSetup import setup_dispatcher
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from Bot import bot
 from data.reply_markup_class import Keyboard
-
+import emoji
 logging.basicConfig(level=logging.INFO)
 storage = MemoryStorage()
 
@@ -15,16 +15,16 @@ dp = Dispatcher(bot, storage=storage)
 db_session.global_init("data.db3")
 
 buttons = [
-        [types.InlineKeyboardButton(text="Изменить текст", callback_data="test_sex",)]]
+        [types.InlineKeyboardButton(text="efg", url='efg.com')]]
 
 keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
 # @dp.message_handler(content_types=[types.ContentType.ANY])
 # async def echo(message: types.Message):
-#     snus = await bot.copy_message(message_id=1000,chat_id=1186221701, from_chat_id=1186221701)
+#   #  snus = await message.answer(emoji.emojize(':bell:')+ ' ' + '🔕')
 #
-#     await message.answer(snus.text)
-#     #user_channel_status = await bot.get_chat_member(chat_id='@testforbot_makar', user_id=6059543486)
-#     #await message.answer(user_channel_status['status'])
+#     await message.answer(message.reply_markup.inline_keyboard)
+#     # user_channel_status = await bot.get_chat_member(chat_id='@testforbot_makar', user_id=6059543486)
+#     # await message.answer(user_channel_status['status'])
 
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith('test'))

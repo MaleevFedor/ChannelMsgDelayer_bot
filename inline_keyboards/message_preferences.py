@@ -1,13 +1,13 @@
 from aiogram import types
 from emoji import emojize
 
-tick = emojize(':heavy_check_mark:')
+tick = emojize(':check_mark_button:')
 cross = emojize(':cross_mark_button:')
-no_bell = emojize(':no_bell:')
+no_bell = emojize(':bell_with_slash:')
 bell = emojize(':bell:')
 
 
-def get_keyboard_preferences(new_markup, is_media_group, restrict_comms, pin, share, reply_post, notifications_off):
+def get_keyboard_preferences(new_markup, is_media_group, restrict_comms, pin, share, reply_post, notifications):
     if restrict_comms:
         comms = 'Включить комментарии'
     else:
@@ -24,7 +24,7 @@ def get_keyboard_preferences(new_markup, is_media_group, restrict_comms, pin, sh
         reply = 'Ответный пост: ' + tick
     else:
         reply = 'Ответный пост: ' + cross
-    if notifications_off:
+    if not notifications:
         notif_text = no_bell
     else:
         notif_text = bell

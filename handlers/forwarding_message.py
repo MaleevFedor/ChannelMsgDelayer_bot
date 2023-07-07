@@ -13,8 +13,47 @@ from Bot import bot
 from inline_keyboards.message_preferences import get_keyboard_preferences, get_keyboard_preferences_repost
 import emoji
 import urlextract
-
+from sqlalchemy import or_
 extractor = urlextract.URLExtract()
+
+async def show_the_message(data):
+    if data['media_group'] == False:
+        sum_markup = types.InlineKeyboardMarkup()
+        for i in data['hidden_continuation_text']:
+            button = types.InlineKeyboardButton(text=i, callback_data='showing_message')
+            sum_markup.add(button)
+        for i in data['reply_markup']:
+            if len(i)>1:
+               sum_markup.add(*i)
+            else:
+                sum_markup.add(i)
+            #sum_markup.add(button)
+            #bot.send_message(button,chat_id=data['message']['from']['id'])
+        for i in data['new_markup']:
+            if len(i)>1:
+                sum_markup.add(*i)
+            else:
+                sum_markup.add(i)
+            # sum_markup.add(button)
+            # bot.send_message(text=button, chat_id=data['message']['from']['id'])
+        msg_copy = await bot.copy_message(chat_id=data['message']['from']['id'],
+                                          from_chat_id=data['message']['from']['id'],
+                                          message_id=data['message_id'],
+                                          reply_markup=sum_markup)
+
+    else:
+        media_group = types.MediaGroup()
+        msg = data['msg_0']
+        media_group.attach({"media": msg[0], "type": msg[1], "caption": data['caption']})
+        for i in range(1, data['file_counter']):
+            msg = data[f'msg_{i}']
+            media_group.attach({"media": msg[0], "type": msg[1]})
+
+        msg_copy = await bot.send_media_group(media=media_group, chat_id=data['message']['from']['id'])
+    return msg_copy
+
+async def message_not_ready(callback: types.CallbackQuery):
+    await callback.answer('Функция будет доступна после публикации')
 
 async def start_forwarding(message: types.Message, state: FSMContext):
     list_of_channels = await create_list_of_channels(message['from']['id'])
@@ -27,12 +66,12 @@ async def start_forwarding(message: types.Message, state: FSMContext):
         data['hidden_continuation_all'] = []
         data['hidden_continuation_text'] = []
         data['hidden_continuation_subs'] = []
-        data['restrict_comms'] = False
+        data['disablecomms'] = False
         data['pin'] = False
         data['share'] = False
-        data['reply_post'] = False
+        data['reply'] = False
         data['repost'] = False
-        data['notifications_off'] = False
+        data['notifications'] = True
         data['media_group'] = False
         data['reply_markup'] = []
     await message.answer('Отправьте сообщение для пересылки')
@@ -50,20 +89,21 @@ async def forward_not_media_group(message: types.Message, state: FSMContext):
 
         if message.reply_markup:
             data['reply_markup'] = message.reply_markup.inline_keyboard
-            await message.answer(data['reply_markup'])
+            #await message.answer(data['reply_markup'])
 
         ##     if not data['media_group']:
 
         #            await bot.copy_message(data['message_id'], chat_id=message.from_user.id)
        # await message.answer(message)
+        await show_the_message(data)
         data['menu_msg'] = await message.answer("Выберите нужные настройки", reply_markup=
                                                 get_keyboard_preferences(data['new_markup'],
                                                                          data['media_group'],
-                                                                         data['restrict_comms'],
+                                                                         data['disablecomms'],
                                                                          data['pin'],
                                                                          data['share'],
-                                                                         data['reply_post'],
-                                                                         data['notifications_off']))
+                                                                         data['reply'],
+                                                                         data['notifications']))
     #await state.set_state(ForwardingMessages.CustomizingMessage.state)
     #await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
 
@@ -80,14 +120,15 @@ async def forward_media_group(message: types.Message, state: FSMContext, album: 
                 result = [str(obj[obj.content_type].file_id), str(obj.content_type)]
             data[f'msg_{i}'] = result
         data['file_counter'] = len(album)
+        await show_the_message(data)
         data['menu_msg'] = await message.answer("Выберите нужные настройки", reply_markup=
                                                 get_keyboard_preferences(data['new_markup'],
                                                                          data['media_group'],
-                                                                         data['restrict_comms'],
+                                                                         data['disablecomms'],
                                                                          data['pin'],
                                                                          data['share'],
-                                                                         data['reply_post'],
-                                                                         data['notifications_off']))
+                                                                         data['reply'],
+                                                                         data['notifications']))
    # await message.answer("Напишите дату отправки сообщения в формате yyyy-MM-dd-HH:mm")
 
 
@@ -127,6 +168,18 @@ async def proceeding_customization(callback: types.CallbackQuery, state: FSMCont
             if data['new_markup']:
                 data['new_markup'] = []
                 await callback.answer('Кнопки успешно удалены')
+                await bot.delete_message(message_id=data['menu_msg'].message_id, chat_id=data['menu_msg'].chat.id)
+                await show_the_message(data)
+                data['menu_msg'] = await bot.send_message(text="Выберите нужные настройки",
+                                                          chat_id=callback.from_user.id,
+                                                          reply_markup=
+                                                          get_keyboard_preferences(data['new_markup'],
+                                                                                   data['media_group'],
+                                                                                   data['disablecomms'],
+                                                                                   data['pin'],
+                                                                                   data['share'],
+                                                                                   data['reply'],
+                                                                                   data['notifications']))
                 return
             else:
                 await bot.send_message(text='Отправьте боту список URL-кнопок в следующем формате:\n'
@@ -135,6 +188,41 @@ async def proceeding_customization(callback: types.CallbackQuery, state: FSMCont
                                             ' Используйте разделитель "|", чтобы добавить до трех кнопок в один ряд'
                                             ' (допустимо 15 рядов)',
                                        chat_id=callback.from_user.id)
+        elif action == 'pin'\
+                or action == 'disablecomms'\
+                or action == 'share'\
+                or action == 'notifications':
+
+            data[f'{action}'] = not data[f'{action}']
+            await bot.delete_message(message_id=data['menu_msg'].message_id, chat_id=data['menu_msg'].chat.id)
+            data['menu_msg'] = await bot.send_message(text="Выберите нужные настройки",
+                                                      chat_id=callback.from_user.id,
+                                                      reply_markup=
+                                                      get_keyboard_preferences(data['new_markup'],
+                                                                               data['media_group'],
+                                                                               data['disablecomms'],
+                                                                               data['pin'],
+                                                                               data['share'],
+                                                                               data['reply'],
+                                                                               data['notifications']))
+            return
+        elif action == 'reply':
+            if data['reply'] != False:
+                data['reply'] = False
+                await bot.delete_message(message_id=data['menu_msg'].message_id, chat_id=data['menu_msg'].chat.id)
+                data['menu_msg'] = await bot.send_message(text="Выберите нужные настройки",
+                                                          chat_id=callback.from_user.id,
+                                                          reply_markup=
+                                                          get_keyboard_preferences(data['new_markup'],
+                                                                                   data['media_group'],
+                                                                                   data['disablecomms'],
+                                                                                   data['pin'],
+                                                                                   data['share'],
+                                                                                   data['reply'],
+                                                                                   data['notifications']))
+                return
+            await bot.send_message(text="Скиньте ссылку на пост, ответом на который будет это сообщение",
+                                   chat_id=callback.from_user.id)
 
         elif action == 'end':
             await bot.delete_message(message_id=data['menu_msg'].message_id, chat_id=data['menu_msg'].chat.id)
@@ -189,30 +277,77 @@ async def customization(message: types.Message, state: FSMContext):
                 data['new_markup'].append(markup)
                 markup = []
 
-            await message.answer('Кнопки успешно добавлены')
+            #await message.answer('Кнопки успешно добавлены')
+            await show_the_message(data)
             data['menu_msg'] = await message.answer("Выберите нужные настройки", reply_markup=
                                                     get_keyboard_preferences(data['new_markup'],
                                                                              data['media_group'],
-                                                                             data['restrict_comms'],
+                                                                             data['disablecomms'],
                                                                              data['pin'],
                                                                              data['share'],
-                                                                             data['reply_post'],
-                                                                             data['notifications_off']))
+                                                                             data['reply'],
+                                                                             data['notifications']))
 
 
 
         elif data['action'] == 'editcaption':
             data['caption'] = message.text
-            await message.answer('Подпись добавлена')
+            #await message.answer('Подпись добавлена')
+            await show_the_message(data)
             data['menu_msg'] = await message.answer("Выберите нужные настройки", reply_markup=
                                                     get_keyboard_preferences(data['new_markup'],
                                                                              data['media_group'],
-                                                                             data['restrict_comms'],
+                                                                             data['disablecomms'],
                                                                              data['pin'],
                                                                              data['share'],
-                                                                             data['reply_post'],
-                                                                             data['notifications_off']))
+                                                                             data['reply'],
+                                                                             data['notifications']))
+        elif data['action'] == 'reply':
 
+            try:
+                channel_id = message.text.split('/')[-2]
+                msg_id = message.text.split('/')[-1]
+                db_sess = db_session.create_session()
+                sender_id = db_sess.query(User).filter(User.tg_id == int(message.from_user.id)).first().id
+                channel_id = db_sess.query(Channel).filter(or_(Channel.ch_username == channel_id, Channel.tg_id == channel_id),
+                                                           sender_id == Channel.user_id).first().tg_id
+                if not channel_id:
+                    await message.answer("Ссылка недействительна, либо вы не добавили этот канал")
+
+                    await state.set_state(ForwardingMessages.ProceedingCustomization.state)
+                    return
+
+                try:
+                    message_id = await bot.copy_message(message_id=msg_id,
+                                                        chat_id=message.from_user.id,
+                                                        from_chat_id=channel_id)
+                    await bot.delete_message(chat_id=message.from_user.id, message_id=message_id.message_id)
+                except Exception as e:
+                    if str(e) == 'Message to copy not found':
+                        await message.answer("Ссылка недействительна: сообщения с номером "
+                                             + str(msg_id) + 'нет в канале')
+
+                        await state.set_state(ForwardingMessages.ProceedingCustomization.state)
+                        return
+                    else:
+                        raise e
+                #data['reply'] = [channel_id, msg_id]
+                data['reply'] = msg_id
+                await show_the_message(data)
+                data['menu_msg'] = await message.answer("Выберите нужные настройки", reply_markup=
+                get_keyboard_preferences(data['new_markup'],
+                                         data['media_group'],
+                                         data['disablecomms'],
+                                         data['pin'],
+                                         data['share'],
+                                         data['reply'],
+                                         data['notifications']))
+
+
+            except:
+                await message.answer("Ссылка недействительна")
+                await state.set_state(ForwardingMessages.ProceedingCustomization.state)
+                return
 
 # async def urlbutton(message: types.Message, state: FSMContext):
 #     async with state.proxy() as data:
@@ -227,11 +362,11 @@ async def customization(message: types.Message, state: FSMContext):
 #         await message.answer(text=data['message'].text, parse_mode='HTML')
 #         data['menu_msg'] = await message.answer("Выберите нужные настройки", reply_markup=
 #                                                 get_keyboard_preferences(data['media_group'],
-#                                                                          data['restrict_comms'],
+#                                                                          data['disablecomms'],
 #                                                                          data['pin'],
 #                                                                          data['share'],
-#                                                                          data['reply_post'],
-#                                                                          data['notifications_off']))
+#                                                                          data['reply'],
+#                                                                          data['notifications']))
 
 
 
@@ -253,14 +388,15 @@ async def continuation_for_subs(message: types.Message, state: FSMContext):
         # data['menu_msg']
 
         # bot.delete_message(data['menu_msg'].message_id, chat_id=data['menu_msg'].from_user.id)
+        await show_the_message(data)
         data['menu_msg'] = await message.answer("Выберите нужные настройки", reply_markup=
                                                 get_keyboard_preferences(data['new_markup'],
                                                                          data['media_group'],
-                                                                         data['restrict_comms'],
+                                                                         data['disablecomms'],
                                                                          data['pin'],
                                                                          data['share'],
-                                                                         data['reply_post'],
-                                                                         data['notifications_off']))
+                                                                         data['reply'],
+                                                                         data['notifications']))
 
 
 # async def continuation_choice(callback: types.CallbackQuery, state: FSMContext):
@@ -311,7 +447,8 @@ async def forward_channel(message: types.Message, state: FSMContext):
                 mediagroup_id = data['msg_0'][0]
                 msg = Message(tg_id=data['caption'], date=date,
                               sender_id=sender_id, channel_id=channel_id.id, mediagroup_id=mediagroup_id,
-                              type_media='caption')
+                              type_media='caption', restrict_comms=data['disablecomms'], pin=data['pin'],
+                              share=data['share'], reply_post=data['reply'])
                 db_sess.add(msg)
                 db_sess.commit()
                 for i in range(data['file_counter']):
@@ -324,7 +461,9 @@ async def forward_channel(message: types.Message, state: FSMContext):
             else:
                 msg_id = data['message_id']
                 msg = Message(tg_id=msg_id, date=date, sender_id=sender_id,
-                              channel_id=channel_id.id, reply_markup=True)
+                              channel_id=channel_id.id, reply_markup=True,
+                              restrict_comms=data['disablecomms'], pin=data['pin'],
+                              share=data['share'], reply_post=data['reply'])
                 db_sess.add(msg)
                 data['reply_markup'] += data['new_markup']
                 content = ''
@@ -396,7 +535,7 @@ def setup(dp: Dispatcher):
                                 content_types=types.ContentType.TEXT)
     dp.register_message_handler(continuation_for_subs, state=ForwardingMessages.HiddenContinuationForSubs,
                                 content_types=types.ContentType.TEXT)
-    #dp.register_callback_query_handler(continuation_choice, lambda c: c.data and c.data.startswith('hidden'), state='*')
+    dp.register_callback_query_handler(message_not_ready, lambda c: c.data and c.data == 'showing_message', state='*')
 
 
     dp.register_message_handler(forward_time, state=ForwardingMessages.WaitingForTimeToSchedule,

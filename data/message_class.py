@@ -15,3 +15,7 @@ class Message(SqlAlchemyBase):
     type_media = sqlalchemy.Column(sqlalchemy.String)
     is_sent = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
     #id_on_post = sqlalchemy.Column(sqlalchemy.String)
+    restrict_comms = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
+    pin = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
+    share = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
+    reply_post = sqlalchemy.Column(sqlalchemy.String, default=False)

@@ -20,11 +20,21 @@ buttons = [
 keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
 # @dp.message_handler(content_types=[types.ContentType.ANY])
 # async def echo(message: types.Message):
-#   #  snus = await message.answer(emoji.emojize(':bell:')+ ' ' + '🔕')
-#
-#     await message.answer(message.reply_markup.inline_keyboard)
-#     # user_channel_status = await bot.get_chat_member(chat_id='@testforbot_makar', user_id=6059543486)
-#     # await message.answer(user_channel_status['status'])
+#     chat_id = -1001945938118
+#     message_id = 1000
+#     try:
+#         msg_id = await bot.copy_message(message_id=message_id, chat_id=1186221701, from_chat_id=chat_id)
+#         await bot.delete_message(chat_id=message.from_user.id, message_id=msg_id.message_id)
+#         message_exists = True
+#     except Exception as e:
+#         if str(e) == 'Message to copy not found':
+#             message_exists = False
+#         else:
+#             raise e
+
+    # await message.answer(message_exists)
+    # user_channel_status = await bot.get_chat_member(chat_id='@testforbot_makar', user_id=6059543486)
+    # await message.answer(user_channel_status['status'])
 
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith('test'))
